@@ -20,11 +20,11 @@ export default function ScenarioManager({ onClose, onLoadScenario }) {
   };
 
   return (
-    <div onClick={onClose} style={{
+    <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
       display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
     }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
+      <div style={{
         background: C.card, padding: 32, width: "100%", maxWidth: 540, maxHeight: "80vh",
         overflow: "auto", boxShadow: "0 16px 64px rgba(0,0,0,0.15)", position: "relative",
       }}>
@@ -86,14 +86,18 @@ export function SaveDialog({ section, config, onClose }) {
   };
 
   return (
-    <div onClick={onClose} style={{
+    <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)",
       display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
     }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
+      <div style={{
         background: C.card, padding: 28, width: "100%", maxWidth: 340,
-        boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.12)", position: "relative",
       }}>
+        <button onClick={onClose} style={{
+          position: "absolute", top: 10, right: 10, background: "none", border: "none",
+          fontSize: 18, color: C.textLight, cursor: "pointer",
+        }}>×</button>
         <h3 style={{ fontFamily: fonts.serif, fontWeight: 400, margin: "0 0 16px 0", color: C.text }}>Save Configuration</h3>
         <input type="text" placeholder="Scenario name..." value={name} onChange={(e) => setName(e.target.value)} autoFocus
           style={{ width: "100%", padding: "10px 12px", border: `1.5px solid ${C.border}`, borderRadius: 0, fontFamily: fonts.sans, fontSize: 14, outline: "none", background: "transparent", color: C.text, boxSizing: "border-box" }} />
@@ -127,14 +131,18 @@ export function LoadDialog({ section, onLoad, onClose }) {
   }, [section]);
 
   return (
-    <div onClick={onClose} style={{
+    <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)",
       display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
     }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
+      <div style={{
         background: C.card, padding: 28, width: "100%", maxWidth: 380, maxHeight: "60vh", overflow: "auto",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.12)", position: "relative",
       }}>
+        <button onClick={onClose} style={{
+          position: "absolute", top: 10, right: 10, background: "none", border: "none",
+          fontSize: 18, color: C.textLight, cursor: "pointer",
+        }}>×</button>
         <h3 style={{ fontFamily: fonts.serif, fontWeight: 400, margin: "0 0 16px 0", color: C.text }}>Load Configuration</h3>
         {loading && <div style={{ color: C.textLight }}>Loading...</div>}
         {!loading && scenarios.length === 0 && (

@@ -39,6 +39,16 @@ const breakEvenPlugin = {
 };
 ChartJS.register(breakEvenPlugin);
 
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function monthToDate(monthOffset) {
+  const now = new Date();
+  const m = now.getMonth() + monthOffset;
+  const year = now.getFullYear() + Math.floor(m / 12);
+  const month = ((m % 12) + 12) % 12;
+  return `${MONTH_NAMES[month]} ${year}`;
+}
+
 export default function InteractiveChart({
   data, keys, colors, labels, title,
   breakEvenMonth, annotation, mobile, formatY = fmtK,
@@ -67,7 +77,7 @@ export default function InteractiveChart({
   if (!processed || processed.length < 2) return null;
 
   const chartLabels = processed.map((d) =>
-    granularity === "yearly" ? `Yr ${d.month / 12}` : `M${d.month}`
+    granularity === "yearly" ? monthToDate(d.month) : monthToDate(d.month)
   );
 
   const datasets = keys.map((key, i) => ({
@@ -110,7 +120,7 @@ export default function InteractiveChart({
           title: (items) => {
             const d = processed[items[0].dataIndex];
             const yr = (d.month / 12).toFixed(1);
-            return `Year ${yr} (Month ${d.month})`;
+            return `${monthToDate(d.month)} — Year ${yr}`;
           },
           label: (item) => ` ${item.dataset.label}: ${formatY(item.raw)}`,
         },

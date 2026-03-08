@@ -3,3 +3,5 @@ dist
 .DS_Store
 .claude
 CLAUDE_CODE_PROMPT.txt
+.env
+.env.local

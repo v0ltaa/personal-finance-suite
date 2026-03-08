@@ -208,7 +208,7 @@ export default function BuyVsRent() {
           <Field label="Fixed Period" suffix="yrs" value={fixedPeriod} onChange={setFixedPeriod} tip="How long the fixed rate lasts (typically 2 or 5 years)." sliderMode={sliderMode} fieldKey="fixedPeriod" />
           <Field label="Revert Rate" suffix="%" value={revertRate} onChange={setRevertRate} tip="Lender's SVR after the fixed period. Models worst case — you'd normally remortgage." sliderMode={sliderMode} fieldKey="revertRate" />
         </div>
-        <SummaryBar>Loan: {fmt(loanAmount)} · Deposit: {fmt(deposit)} ({effectivePct.toFixed(1)}%) · LTV: {(100 - effectivePct).toFixed(1)}%</SummaryBar>
+        <SummaryBar>Loan: {fmt(loanAmount)} · Deposit: {fmt(deposit)} ({effectivePct.toFixed(1)}%) · LTV: {(100 - effectivePct).toFixed(1)}% · Monthly payment: {fmt(Math.round(pmtCalc(loanAmount, fixedRate, mortgageTerm)))}/mo</SummaryBar>
       </Section>
 
       <Section title="Rent Comparison" canSave={canSave}

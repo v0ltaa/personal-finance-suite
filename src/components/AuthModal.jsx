@@ -6,6 +6,7 @@ export default function AuthModal({ onClose, auth }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -25,7 +26,7 @@ export default function AuthModal({ onClose, auth }) {
     setError(""); setLoading(true);
     const res = mode === "login"
       ? await auth.signIn(email, password)
-      : await auth.signUp(email, password);
+      : await auth.signUp(email, password, username.trim() || undefined);
     setLoading(false);
     if (res.error) setError(res.error.message);
     else onClose();
@@ -37,6 +38,10 @@ export default function AuthModal({ onClose, auth }) {
         {mode === "login" ? "Sign In" : "Create Account"}
       </h2>
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {mode === "signup" && (
+          <input type="text" placeholder="Username (display name)" value={username} onChange={(e) => setUsername(e.target.value)}
+            style={{ padding: "10px 12px", border: `1.5px solid ${C.border}`, borderRadius: 0, fontFamily: fonts.sans, fontSize: 14, outline: "none", background: "transparent", color: C.text }} />
+        )}
         <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required
           style={{ padding: "10px 12px", border: `1.5px solid ${C.border}`, borderRadius: 0, fontFamily: fonts.sans, fontSize: 14, outline: "none", background: "transparent", color: C.text }} />
         <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6}
@@ -60,11 +65,11 @@ export default function AuthModal({ onClose, auth }) {
 
 function Overlay({ children, onClose }) {
   return (
-    <div onClick={onClose} style={{
+    <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
       display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
     }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
+      <div style={{
         background: C.card, padding: 32, width: "100%", maxWidth: 380,
         boxShadow: "0 16px 64px rgba(0,0,0,0.15)", position: "relative",
       }}>

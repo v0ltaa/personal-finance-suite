@@ -51,3 +51,21 @@ export async function updateScenario(id, config) {
     .update({ config, updated_at: new Date().toISOString() })
     .eq("id", id);
 }
+
+// ── Avatar Upload ──
+
+export async function uploadAvatar(userId, file) {
+  if (!supabase) return { error: { message: "Supabase not configured" } };
+  const ext = file.name.split(".").pop();
+  const path = `${userId}/avatar.${ext}`;
+  const { error } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
+  if (error) return { error };
+  const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(path);
+  // Store URL in user metadata
+  await supabase.auth.updateUser({ data: { avatar_url: publicUrl + "?t=" + Date.now() } });
+  return { url: publicUrl };
+}
+
+export function getAvatarUrl(user) {
+  return user?.user_metadata?.avatar_url || null;
+}

@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { C, fonts } from "./lib/tokens";
 import { useIsMobile, useAuth } from "./lib/hooks";
+import { uploadAvatar, getAvatarUrl } from "./lib/supabase";
 import AuthModal from "./components/AuthModal";
 import ScenarioManager from "./components/ScenarioManager";
 
@@ -19,6 +20,15 @@ export default function App() {
   const location = useLocation();
   const [showAuth, setShowAuth] = useState(false);
   const [showScenarios, setShowScenarios] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !auth.user) return;
+    await uploadAvatar(auth.user.id, file);
+    // Force refresh user metadata
+    window.location.reload();
+  };
 
   const currentPath = location.pathname;
 
@@ -52,8 +62,18 @@ export default function App() {
           {/* User icon / auth */}
           {auth.user ? (
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} />
+              <div onClick={() => fileInputRef.current?.click()} title="Click to change avatar" style={{
+                width: 30, height: 30, borderRadius: "50%", cursor: "pointer",
+                background: getAvatarUrl(auth.user) ? `url(${getAvatarUrl(auth.user)}) center/cover` : C.accent,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 12, fontWeight: 700, color: "#fff", fontFamily: fonts.sans,
+                border: `2px solid ${C.border}`, flexShrink: 0,
+              }}>
+                {!getAvatarUrl(auth.user) && (auth.user.user_metadata?.display_name?.[0] || auth.user.email?.[0] || "?").toUpperCase()}
+              </div>
               <span style={{ fontSize: 11, color: C.textMid, fontFamily: fonts.sans, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {auth.user.email}
+                {auth.user.user_metadata?.display_name || auth.user.email}
               </span>
               <button onClick={auth.signOut} style={{
                 padding: "6px 12px", border: `1px solid ${C.border}`, borderRadius: 0,
