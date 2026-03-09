@@ -4,6 +4,7 @@ import { HashRouter, Routes, Route } from "react-router-dom";
 import App from "./App";
 import BuyVsRent from "./pages/BuyVsRent";
 import Sandbox from "./pages/Sandbox";
+import GaffTracker from "./pages/GaffTracker";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
@@ -12,6 +13,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <Route element={<App />}>
           <Route index element={<BuyVsRent />} />
           <Route path="sandbox" element={<Sandbox />} />
+          <Route path="gaff" element={<GaffTracker />} />
         </Route>
       </Routes>
     </HashRouter>

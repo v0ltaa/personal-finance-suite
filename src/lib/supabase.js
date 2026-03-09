@@ -69,3 +69,74 @@ export async function uploadAvatar(userId, file) {
 export function getAvatarUrl(user) {
   return user?.user_metadata?.avatar_url || null;
 }
+
+// ── Gaff Tracker: Properties ──
+// Requires Supabase table: properties
+// Requires Supabase storage bucket: property-photos
+
+export async function loadProperties() {
+  if (!supabase) return { data: [], error: null };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { data: [], error: null };
+  return supabase.from("properties").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+}
+
+export async function saveProperty(data) {
+  if (!supabase) return { error: { message: "Supabase not configured" } };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: { message: "Not logged in" } };
+  return supabase.from("properties").insert({ ...data, user_id: user.id }).select().single();
+}
+
+export async function updateProperty(id, data) {
+  if (!supabase) return { error: { message: "Supabase not configured" } };
+  return supabase.from("properties").update({ ...data, updated_at: new Date().toISOString() }).eq("id", id).select().single();
+}
+
+export async function deleteProperty(id) {
+  if (!supabase) return { error: { message: "Supabase not configured" } };
+  return supabase.from("properties").delete().eq("id", id);
+}
+
+export async function uploadPropertyPhoto(userId, propertyId, file) {
+  if (!supabase) return { error: { message: "Supabase not configured" } };
+  const ext = file.name.split(".").pop();
+  const path = `${userId}/${propertyId}.${ext}`;
+  const { error } = await supabase.storage.from("property-photos").upload(path, file, { upsert: true });
+  if (error) return { error };
+  const { data: { publicUrl } } = supabase.storage.from("property-photos").getPublicUrl(path);
+  return { url: publicUrl };
+}
+
+// ── Gaff Tracker: Custom Fields ("Things I Care About") ──
+// Requires Supabase table: custom_fields
+
+export async function loadCustomFields() {
+  if (!supabase) return { data: [], error: null };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { data: [], error: null };
+  return supabase.from("custom_fields").select("*").eq("user_id", user.id).order("created_at", { ascending: true });
+}
+
+export async function saveCustomField(name, field_type) {
+  if (!supabase) return { error: { message: "Supabase not configured" } };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: { message: "Not logged in" } };
+  return supabase.from("custom_fields").insert({ name, field_type, user_id: user.id }).select().single();
+}
+
+export async function deleteCustomField(id) {
+  if (!supabase) return { error: { message: "Supabase not configured" } };
+  return supabase.from("custom_fields").delete().eq("id", id);
+}
+
+// ── Gaff Tracker: Workplace address (stored in user metadata) ──
+
+export async function saveWorkplaceAddress(address) {
+  if (!supabase) return { error: "Not configured" };
+  return supabase.auth.updateUser({ data: { workplace_address: address } });
+}
+
+export function getWorkplaceAddress(user) {
+  return user?.user_metadata?.workplace_address || "";
+}

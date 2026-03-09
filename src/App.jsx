@@ -10,7 +10,7 @@ const modules = [
   { key: "buyVsRent", label: "Buy vs Rent", path: "/" },
   { key: "sandbox", label: "Sandbox", path: "/sandbox" },
   { key: "financeTracker", label: "Personal Finance Tracker", path: null },
-  { key: "flatTracker", label: "Flat Tracker", path: null },
+  { key: "gaffTracker", label: "Gaff Tracker", path: "/gaff" },
 ];
 
 export default function App() {
