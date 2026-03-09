@@ -131,10 +131,6 @@ export default function BuyVsRent() {
   const [sellingConveyancing, setSellingConveyancing] = useState(defaultConfig.sellingConveyancing);
   const [epcCost, setEpcCost] = useState(defaultConfig.epcCost);
 
-  // Rent inputs
-  const [monthlyRent, setMonthlyRent] = useState(defaultConfig.monthlyRent);
-  const [rentInflation, setRentInflation] = useState(defaultConfig.rentInflation);
-
   // Save/load dialogs
   const [saveDialog, setSaveDialog] = useState(null);
   const [loadDialog, setLoadDialog] = useState(null);
@@ -158,8 +154,6 @@ export default function BuyVsRent() {
     estateAgentPct, sellingConveyancing, epcCost,
   });
 
-  const getRentConfig = () => ({ monthlyRent, rentInflation });
-
   const applyBuyConfig = (cfg) => {
     const setters = {
       propertyName: setPropertyName, propertyPhotoUrl: setPropertyPhotoUrl,
@@ -174,11 +168,6 @@ export default function BuyVsRent() {
       estateAgentPct: setEstateAgentPct, sellingConveyancing: setSellingConveyancing, epcCost: setEpcCost,
     };
     for (const [k, v] of Object.entries(cfg)) { if (setters[k]) setters[k](v); }
-  };
-
-  const applyRentConfig = (cfg) => {
-    if (cfg.monthlyRent !== undefined) setMonthlyRent(cfg.monthlyRent);
-    if (cfg.rentInflation !== undefined) setRentInflation(cfg.rentInflation);
   };
 
   const grid = {
@@ -330,17 +319,7 @@ export default function BuyVsRent() {
         </SubGroup>
       </BuyPropertyPanel>
 
-      {/* ══ RENT SECTION ══ */}
-      <Section title="Rent Scenario" canSave={canSave}
-        onSave={() => setSaveDialog({ section: "rent", config: getRentConfig() })}
-        onLoad={() => setLoadDialog("rent")}>
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: mobile ? "16px" : "20px 32px" }}>
-          <Field label="Monthly Rent" prefix="£" value={monthlyRent} onChange={setMonthlyRent} tip="Monthly rent for a comparable property." fieldKey="monthlyRent" />
-          <Field label="Rent Inflation" suffix="% p.a." value={rentInflation} onChange={setRentInflation} tip="Annual rent increase. UK cities: 4–8% recently, long-term avg 2–3%." fieldKey="rentInflation" />
-        </div>
-      </Section>
-
-      {/* Sandbox CTA */}
+      {/* Rent vs Buy CTA */}
       <div style={{
         marginTop: 8, padding: mobile ? "16px" : "20px 24px",
         background: C.accentLight, border: `1.5px solid ${C.accent}`,
@@ -351,7 +330,7 @@ export default function BuyVsRent() {
             Ready to analyse?
           </div>
           <div style={{ fontSize: 13, fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic" }}>
-            Save your buy and rent scenarios, then head to Sandbox to set assumptions and see the full analysis.
+            Save your buy scenario, then head to Rent vs Buy to pick a flat, set assumptions, and see the full analysis.
           </div>
         </div>
       </div>
@@ -362,12 +341,12 @@ export default function BuyVsRent() {
         display: "flex", justifyContent: "space-between",
       }}>
         <span style={{ fontSize: 10, color: C.textLight, letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: 600 }}>Personal Finance Suite</span>
-        <span style={{ fontSize: 10, color: C.textFaint, letterSpacing: "0.15em", textTransform: "uppercase" }}>Buy vs Rent</span>
+        <span style={{ fontSize: 10, color: C.textFaint, letterSpacing: "0.15em", textTransform: "uppercase" }}>Buy Scenario</span>
       </div>
 
       {/* Dialogs */}
       {saveDialog && <SaveDialog section={saveDialog.section} config={saveDialog.config} onClose={() => setSaveDialog(null)} />}
-      {loadDialog && <LoadDialog section={loadDialog} onLoad={loadDialog === "buy" ? applyBuyConfig : applyRentConfig} onClose={() => setLoadDialog(null)} />}
+      {loadDialog && <LoadDialog section={loadDialog} onLoad={applyBuyConfig} onClose={() => setLoadDialog(null)} />}
     </>
   );
 }

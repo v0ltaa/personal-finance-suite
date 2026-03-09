@@ -7,8 +7,8 @@ import AuthModal from "./components/AuthModal";
 import ScenarioManager from "./components/ScenarioManager";
 
 const modules = [
-  { key: "buyVsRent", label: "Buy vs Rent", path: "/" },
-  { key: "sandbox", label: "Sandbox", path: "/sandbox" },
+  { key: "buyVsRent", label: "Buy Scenario", path: "/" },
+  { key: "sandbox", label: "Rent vs Buy", path: "/sandbox" },
   { key: "financeTracker", label: "Personal Finance Tracker", path: null },
   { key: "gaffTracker", label: "Gaff Tracker", path: "/gaff" },
 ];

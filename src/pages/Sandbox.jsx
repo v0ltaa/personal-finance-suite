@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { C, fonts, fmt, hpPresets, invPresets } from "../lib/tokens";
 import { runProjection, calcStampDuty, pmtCalc, defaultConfig } from "../lib/calc";
 import { useIsMobile, useAuth } from "../lib/hooks";
-import { loadScenarios } from "../lib/supabase";
+import { loadScenarios, loadProperties } from "../lib/supabase";
 import Field from "../components/Field";
 import PresetSelector from "../components/PresetSelector";
 import InteractiveChart from "../components/InteractiveChart";
@@ -19,7 +19,7 @@ function ScenarioPicker({ title, scenarios, selected, onSelect, loading }) {
       {loading && <div style={{ fontSize: 13, color: C.textLight, fontFamily: fonts.serif }}>Loading...</div>}
       {!loading && scenarios.length === 0 && (
         <div style={{ padding: "12px 16px", border: `1.5px dashed ${C.border}`, fontSize: 12, fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic" }}>
-          No saved scenarios. Configure and save one in Buy vs Rent.
+          No saved scenarios. Configure and save one in Buy Scenario.
         </div>
       )}
       {!loading && scenarios.length > 0 && (
@@ -73,24 +73,24 @@ function ScenarioPicker({ title, scenarios, selected, onSelect, loading }) {
   );
 }
 
-function RentPicker({ scenarios, selected, onSelect, loading }) {
+function FlatPicker({ flats, selected, onSelect, loading }) {
   return (
     <div style={{ marginBottom: 24 }}>
       <div style={{ fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: C.accent, fontWeight: 600, fontFamily: fonts.sans, marginBottom: 10 }}>
-        Rent Scenario
+        Flat to Rent
       </div>
       {loading && <div style={{ fontSize: 13, color: C.textLight, fontFamily: fonts.serif }}>Loading...</div>}
-      {!loading && scenarios.length === 0 && (
+      {!loading && flats.length === 0 && (
         <div style={{ padding: "12px 16px", border: `1.5px dashed ${C.border}`, fontSize: 12, fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic" }}>
-          No saved rent scenarios. Set one up in Buy vs Rent.
+          No saved flats. Add one in Gaff Tracker.
         </div>
       )}
-      {!loading && scenarios.length > 0 && (
+      {!loading && flats.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          {scenarios.map((s) => {
-            const isSelected = selected?.id === s.id;
+          {flats.map((f) => {
+            const isSelected = selected?.id === f.id;
             return (
-              <button key={s.id} onClick={() => onSelect(isSelected ? null : s)} style={{
+              <button key={f.id} onClick={() => onSelect(isSelected ? null : f)} style={{
                 display: "flex", alignItems: "center", gap: 10,
                 padding: "8px 12px",
                 border: `1.5px solid ${isSelected ? C.text : C.border}`,
@@ -98,15 +98,27 @@ function RentPicker({ scenarios, selected, onSelect, loading }) {
                 background: isSelected ? C.text : "transparent",
                 cursor: "pointer", textAlign: "left", transition: "all 0.15s",
               }}>
+                <div style={{
+                  width: 30, height: 30, flexShrink: 0,
+                  background: isSelected ? "rgba(255,255,255,0.1)" : C.bg,
+                  border: `1px solid ${isSelected ? "rgba(255,255,255,0.2)" : C.borderLight}`,
+                  overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {f.photo_url ? (
+                    <img src={f.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isSelected ? "rgba(255,255,255,0.4)" : C.textFaint} strokeWidth="1.5">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                      <polyline points="9 22 9 12 15 12 15 22"/>
+                    </svg>
+                  )}
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: fonts.serif, fontSize: 13, color: isSelected ? C.bg : C.text }}>
-                    {fmt(s.config?.monthlyRent || 0)}/mo
-                    <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 6, color: isSelected ? "rgba(255,255,255,0.5)" : C.textMid }}>
-                      +{s.config?.rentInflation || 0}% p.a.
-                    </span>
+                  <div style={{ fontFamily: fonts.serif, fontSize: 13, color: isSelected ? C.bg : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {f.name}
                   </div>
                   <div style={{ fontFamily: fonts.sans, fontSize: 10, color: isSelected ? "rgba(255,255,255,0.45)" : C.textLight, marginTop: 1 }}>
-                    {s.name}
+                    {f.price ? `${fmt(f.price)}/mo` : "No price set"}{f.location ? ` · ${f.location}` : ""}
                   </div>
                 </div>
                 {isSelected && (
@@ -128,51 +140,57 @@ export default function Sandbox() {
   const { user } = useAuth();
 
   const [buyScenarios, setBuyScenarios] = useState([]);
-  const [rentScenarios, setRentScenarios] = useState([]);
+  const [flats, setFlats] = useState([]);
   const [selectedBuy, setSelectedBuy] = useState(null);
-  const [selectedRent, setSelectedRent] = useState(null);
+  const [selectedFlat, setSelectedFlat] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const [houseGrowth, setHouseGrowth] = useState(defaultConfig.houseGrowth);
   const [investReturn, setInvestReturn] = useState(defaultConfig.investReturn);
   const [horizonYears, setHorizonYears] = useState(defaultConfig.horizonYears);
+  const [monthlyRent, setMonthlyRent] = useState(defaultConfig.monthlyRent);
+  const [rentInflation, setRentInflation] = useState(defaultConfig.rentInflation);
   const [activeTab, setActiveTab] = useState("shortTerm");
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
-    Promise.all([loadScenarios("buy"), loadScenarios("rent")]).then(([b, r]) => {
+    Promise.all([loadScenarios("buy"), loadProperties()]).then(([b, p]) => {
       setBuyScenarios(b.data || []);
-      setRentScenarios(r.data || []);
+      setFlats(p.data || []);
       setLoading(false);
     });
   }, [user]);
 
+  // When a flat is selected, auto-fill monthly rent from its price
+  const handleSelectFlat = (flat) => {
+    setSelectedFlat(flat);
+    if (flat?.price) setMonthlyRent(flat.price);
+  };
+
   // Auto-compute results whenever inputs change
   const results = useMemo(() => {
-    if (!selectedBuy || !selectedRent) return null;
+    if (!selectedBuy || !selectedFlat) return null;
     const buyCfg = selectedBuy.config;
-    const rentCfg = selectedRent.config;
     const deposit = buyCfg.depositMode === "pct"
       ? buyCfg.propertyValue * (buyCfg.depositPct / 100)
       : buyCfg.depositCash;
     const stampDuty = buyCfg.stampDutyOverride != null
       ? buyCfg.stampDutyOverride
       : calcStampDuty(buyCfg.propertyValue, buyCfg.isFirstTimeBuyer);
-    return runProjection({ ...buyCfg, ...rentCfg, deposit, stampDuty, houseGrowth, investReturn, horizonYears });
-  }, [selectedBuy, selectedRent, houseGrowth, investReturn, horizonYears]);
+    return runProjection({ ...buyCfg, monthlyRent, rentInflation, deposit, stampDuty, houseGrowth, investReturn, horizonYears });
+  }, [selectedBuy, selectedFlat, monthlyRent, rentInflation, houseGrowth, investReturn, horizonYears]);
 
   const runConfig = useMemo(() => {
-    if (!selectedBuy || !selectedRent) return null;
+    if (!selectedBuy || !selectedFlat) return null;
     const buyCfg = selectedBuy.config;
-    const rentCfg = selectedRent.config;
     const deposit = buyCfg.depositMode === "pct"
       ? buyCfg.propertyValue * (buyCfg.depositPct / 100)
       : buyCfg.depositCash;
     const stampDuty = buyCfg.stampDutyOverride != null
       ? buyCfg.stampDutyOverride
       : calcStampDuty(buyCfg.propertyValue, buyCfg.isFirstTimeBuyer);
-    return { ...buyCfg, ...rentCfg, deposit, stampDuty, houseGrowth, investReturn, horizonYears };
-  }, [selectedBuy, selectedRent, houseGrowth, investReturn, horizonYears]);
+    return { ...buyCfg, monthlyRent, rentInflation, deposit, stampDuty, houseGrowth, investReturn, horizonYears };
+  }, [selectedBuy, selectedFlat, monthlyRent, rentInflation, houseGrowth, investReturn, horizonYears]);
 
   const fB = results?.wD?.length > 0 ? results.wD[results.wD.length - 1].buyWealth : 0;
   const fR = results?.wD?.length > 0 ? results.wD[results.wD.length - 1].rentWealth : 0;
@@ -182,7 +200,7 @@ export default function Sandbox() {
     const csv = activeTab === "shortTerm"
       ? "Month,Year,Net Buy Cost,Cumulative Rent\n" + results.cD.map((d) => `${d.month},${(d.month / 12).toFixed(2)},${Math.round(d.buyCost)},${Math.round(d.rentCost)}`).join("\n")
       : "Month,Year,Buy Wealth,Rent+Invest Wealth\n" + results.wD.map((d) => `${d.month},${(d.month / 12).toFixed(2)},${Math.round(d.buyWealth)},${Math.round(d.rentWealth)}`).join("\n");
-    const filename = activeTab === "shortTerm" ? "buy-vs-rent-costs.csv" : "buy-vs-rent-wealth.csv";
+    const filename = activeTab === "shortTerm" ? "rent-vs-buy-costs.csv" : "rent-vs-buy-wealth.csv";
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
@@ -192,7 +210,7 @@ export default function Sandbox() {
   if (!user) {
     return (
       <div style={{ textAlign: "center", padding: "80px 20px" }}>
-        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, marginBottom: 12 }}>Scenario Sandbox</h2>
+        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, marginBottom: 12 }}>Rent vs Buy</h2>
         <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic" }}>Sign in to save and compare scenarios.</p>
       </div>
     );
@@ -205,10 +223,10 @@ export default function Sandbox() {
 
       {/* ══ LEFT: INPUTS ══ */}
       <div style={{ position: mobile ? "static" : "sticky", top: 80 }}>
-        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, margin: "0 0 24px 0", fontSize: 22 }}>Sandbox</h2>
+        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, margin: "0 0 24px 0", fontSize: 22 }}>Rent vs Buy</h2>
 
         <ScenarioPicker title="Buy Scenario" scenarios={buyScenarios} selected={selectedBuy} onSelect={setSelectedBuy} loading={loading} />
-        <RentPicker scenarios={rentScenarios} selected={selectedRent} onSelect={setSelectedRent} loading={loading} />
+        <FlatPicker flats={flats} selected={selectedFlat} onSelect={handleSelectFlat} loading={loading} />
 
         {/* Assumptions */}
         <div>
@@ -228,6 +246,8 @@ export default function Sandbox() {
             <PresetSelector presets={invPresets} value={investReturn} onChange={setInvestReturn} mobile={true} />
           </div>
 
+          <Field label="Monthly Rent" prefix="£" value={monthlyRent} onChange={setMonthlyRent} tip="Monthly rent for the selected flat. Auto-filled from Gaff Tracker price." fieldKey="monthlyRent" />
+          <Field label="Rent Inflation" suffix="% p.a." value={rentInflation} onChange={setRentInflation} tip="Annual rent increase. UK cities: 4–8% recently, long-term avg 2–3%." fieldKey="rentInflation" />
           <Field label="Time Horizon" suffix="yrs" value={horizonYears} onChange={setHorizonYears} tip="3–5 years short-term, 15–25 long-term." fieldKey="horizonYears" />
         </div>
       </div>
@@ -244,7 +264,7 @@ export default function Sandbox() {
               <path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-4"/>
             </svg>
             <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", textAlign: "center", margin: 0 }}>
-              Select a buy and rent scenario on the left to see the analysis.
+              Select a buy scenario and a flat on the left to see the analysis.
             </p>
           </div>
         ) : (
@@ -255,7 +275,7 @@ export default function Sandbox() {
               padding: "12px 16px", background: C.card, border: `1px solid ${C.borderLight}`,
               fontSize: 11, fontFamily: fonts.sans, color: C.textMid,
             }}>
-              <span><strong style={{ color: C.text }}>{selectedBuy?.config?.propertyName || selectedBuy?.name}</strong> vs <strong style={{ color: C.text }}>{fmt(runConfig.monthlyRent)}/mo</strong></span>
+              <span><strong style={{ color: C.text }}>{selectedBuy?.config?.propertyName || selectedBuy?.name}</strong> vs <strong style={{ color: C.text }}>{selectedFlat?.name}</strong> ({fmt(runConfig.monthlyRent)}/mo)</span>
               <span style={{ color: C.borderLight }}>|</span>
               <span>Growth {runConfig.houseGrowth}% · Invest {runConfig.investReturn}% · {runConfig.horizonYears}yr</span>
             </div>
@@ -378,7 +398,7 @@ export default function Sandbox() {
         {/* Footer */}
         <div style={{ marginTop: 48, borderTop: `2px solid ${C.text}`, paddingTop: 16, display: "flex", justifyContent: "space-between" }}>
           <span style={{ fontSize: 10, color: C.textLight, letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: 600 }}>Personal Finance Suite</span>
-          <span style={{ fontSize: 10, color: C.textFaint, letterSpacing: "0.15em", textTransform: "uppercase" }}>Sandbox</span>
+          <span style={{ fontSize: 10, color: C.textFaint, letterSpacing: "0.15em", textTransform: "uppercase" }}>Rent vs Buy</span>
         </div>
       </div>
     </div>
