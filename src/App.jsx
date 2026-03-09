@@ -11,6 +11,7 @@ const modules = [
   { key: "sandbox", label: "Rent vs Buy", path: "/sandbox" },
   { key: "financeTracker", label: "Personal Finance Tracker", path: null },
   { key: "gaffTracker", label: "Gaff Tracker", path: "/gaff" },
+  { key: "comparison", label: "Property Comparison", path: "/compare" },
 ];
 
 export default function App() {
