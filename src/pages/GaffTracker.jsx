@@ -145,13 +145,38 @@ async function loadMapsSDK() {
   });
 }
 
-function DistanceSection({ location, workplaceAddress }) {
-  const [distances, setDistances] = useState(null);
+// Geocode an address to {lat, lng} — returns null on failure
+async function geocodePropertyLocation(address) {
+  if (!address?.trim() || !GMAPS_KEY) return null;
+  try {
+    await loadMapsSDK();
+    return new Promise(resolve => {
+      new window.google.maps.Geocoder().geocode({ address }, (results, status) => {
+        if (status === "OK" && results[0]) {
+          resolve({ lat: results[0].geometry.location.lat(), lng: results[0].geometry.location.lng() });
+        } else {
+          resolve(null);
+        }
+      });
+    });
+  } catch {
+    return null;
+  }
+}
+
+function DistanceSection({ location, workplaceAddress, propertyId, customValues }) {
+  // Cache key is the normalised workplace address
+  const cacheKey = workplaceAddress?.trim().toLowerCase() || "";
+  const cachedDistances = customValues?.__distances?.[cacheKey] || null;
+
+  const [distances, setDistances] = useState(cachedDistances);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!workplaceAddress || !location) return;
     if (!GMAPS_KEY) return;
+    // Already have cached distances for this workplace — skip the API call
+    if (cachedDistances) return;
     let cancelled = false;
     setLoading(true);
     loadMapsSDK().then(() => {
@@ -168,7 +193,19 @@ function DistanceSection({ location, workplaceAddress }) {
                 results[key] = el.status === "OK" ? { duration: el.duration.text, distance: el.distance.text } : null;
               }
             }
-            if (--pending === 0 && !cancelled) { setDistances(results); setLoading(false); }
+            if (--pending === 0 && !cancelled) {
+              setDistances(results);
+              setLoading(false);
+              // Persist distances so we never re-fetch for this property + workplace combo
+              if (propertyId) {
+                updateProperty(propertyId, {
+                  custom_values: {
+                    ...(customValues || {}),
+                    __distances: { ...(customValues?.__distances || {}), [cacheKey]: results },
+                  },
+                }).catch(() => {});
+              }
+            }
           });
       });
     }).catch(() => { if (!cancelled) setLoading(false); });
@@ -275,7 +312,7 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
                     />
                   </div>
                   <div style={s.sectionHead}>Distance to Work</div>
-                  <DistanceSection location={p.location} workplaceAddress={workplaceAddress} />
+                  <DistanceSection location={p.location} workplaceAddress={workplaceAddress} propertyId={p.id} customValues={p.custom_values} />
                 </>
               )}
             </div>
@@ -372,7 +409,17 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
     if (Object.keys(e).length > 0) { setErrors(e); return; }
     setSaving(true);
 
-    const payload = { ...form, size: form.size === "" ? null : Number(form.size), price: form.price === "" ? null : Number(form.price) };
+    // Geocode the location and embed lat/lng so the Map View never needs to re-geocode
+    const locationChanged = !property || form.location !== property.location;
+    const hasCoords = property?.custom_values?.__lat != null;
+    let customValues = { ...(form.custom_values || {}) };
+    if (locationChanged) delete customValues.__distances; // stale distances for old address
+    if (GMAPS_KEY && form.location && (locationChanged || !hasCoords)) {
+      const coord = await geocodePropertyLocation(form.location);
+      if (coord) { customValues.__lat = coord.lat; customValues.__lng = coord.lng; }
+    }
+
+    const payload = { ...form, size: form.size === "" ? null : Number(form.size), price: form.price === "" ? null : Number(form.price), custom_values: customValues };
     delete payload.id; delete payload.user_id; delete payload.created_at; delete payload.updated_at;
 
     let photoUrl = form.photo_url || null;
@@ -724,6 +771,9 @@ export default function GaffTracker() {
   useEffect(() => {
     if (user) setWorkplaceAddress(getWorkplaceAddress(user));
   }, [user]);
+
+  // Eagerly load Maps SDK so geocoding is instant when user first saves a property
+  useEffect(() => { if (GMAPS_KEY) loadMapsSDK().catch(() => {}); }, []);
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }

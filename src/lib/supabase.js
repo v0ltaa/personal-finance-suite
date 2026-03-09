@@ -140,3 +140,14 @@ export async function saveWorkplaceAddress(address) {
 export function getWorkplaceAddress(user) {
   return user?.user_metadata?.workplace_address || "";
 }
+
+// ── Gaff Tracker: Custom landmarks (stored in user metadata) ──
+
+export async function saveLandmarks(landmarks) {
+  if (!supabase) return { error: "Not configured" };
+  return supabase.auth.updateUser({ data: { landmarks } });
+}
+
+export function getLandmarks(user) {
+  return user?.user_metadata?.landmarks || [];
+}

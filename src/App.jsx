@@ -12,6 +12,7 @@ const modules = [
   { key: "financeTracker", label: "Personal Finance Tracker", path: null },
   { key: "gaffTracker", label: "Gaff Tracker", path: "/gaff" },
   { key: "comparison", label: "Property Comparison", path: "/compare" },
+  { key: "mapView", label: "Map View", path: "/map" },
 ];
 
 export default function App() {
@@ -125,9 +126,13 @@ export default function App() {
       </div>
 
       {/* Page Content */}
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: mobile ? "32px 16px" : "48px 32px" }}>
+      {currentPath === "/map" ? (
         <Outlet />
-      </div>
+      ) : (
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: mobile ? "32px 16px" : "48px 32px" }}>
+          <Outlet />
+        </div>
+      )}
 
       {/* Modals */}
       {showAuth && <AuthModal onClose={() => setShowAuth(false)} auth={auth} />}

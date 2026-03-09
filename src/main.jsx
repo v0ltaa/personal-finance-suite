@@ -6,6 +6,7 @@ import BuyVsRent from "./pages/BuyVsRent";
 import Sandbox from "./pages/Sandbox";
 import GaffTracker from "./pages/GaffTracker";
 import PropertyComparison from "./pages/PropertyComparison";
+import MapView from "./pages/MapView";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
@@ -16,6 +17,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           <Route path="sandbox" element={<Sandbox />} />
           <Route path="gaff" element={<GaffTracker />} />
           <Route path="compare" element={<PropertyComparison />} />
+          <Route path="map" element={<MapView />} />
         </Route>
       </Routes>
     </HashRouter>
