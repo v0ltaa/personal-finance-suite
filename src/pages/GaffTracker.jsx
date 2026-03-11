@@ -1,5 +1,5 @@
 /**
- * Gaff Tracker — property dashboard
+ * Property Tracker — property dashboard
  *
  * Required Supabase setup (run in SQL editor):
  *
@@ -31,15 +31,30 @@
  * CREATE POLICY "own" ON custom_fields FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
  *
  * Also create a storage bucket named "property-photos" with public access.
+ *
+ * CREATE TABLE property_photos (
+ *   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *   property_id UUID REFERENCES properties(id) ON DELETE CASCADE NOT NULL,
+ *   user_id UUID REFERENCES auth.users NOT NULL,
+ *   url TEXT NOT NULL, note TEXT,
+ *   is_main BOOLEAN DEFAULT false, sort_order INTEGER DEFAULT 0,
+ *   created_at TIMESTAMPTZ DEFAULT NOW()
+ * );
+ * ALTER TABLE property_photos ENABLE ROW LEVEL SECURITY;
+ * CREATE POLICY "own" ON property_photos FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
  */
 
 import { useState, useEffect, useRef, useMemo } from "react";
+import Cropper from "react-easy-crop";
 import { C, fonts, fmt } from "../lib/tokens";
 import { useIsMobile, useAuth } from "../lib/hooks";
+import { CURRENCIES, SUPPORTED_CURRENCIES, currencySymbol, getDisplayCurrency, fetchRates, toGBP, fmtCurrency } from "../lib/currency";
 import {
-  loadProperties, saveProperty, updateProperty, deleteProperty, uploadPropertyPhoto,
+  loadProperties, saveProperty, updateProperty, deleteProperty,
   loadCustomFields, saveCustomField, deleteCustomField,
   saveWorkplaceAddress, getWorkplaceAddress,
+  loadPropertyPhotos, savePropertyPhoto, updatePropertyPhoto, deletePropertyPhoto,
+  uploadPropertyPhotoMulti, setMainPhoto,
 } from "../lib/supabase";
 
 const GMAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -52,6 +67,459 @@ const s = {
   textarea: { width: "100%", background: "transparent", border: `1.5px solid ${C.border}`, outline: "none", padding: "10px 12px", fontFamily: fonts.serif, fontSize: 14, color: C.text, boxSizing: "border-box", resize: "vertical", minHeight: 72, lineHeight: 1.5 },
   btn: (active) => ({ padding: "7px 16px", border: `1.5px solid ${active ? C.text : C.border}`, borderRadius: 0, background: active ? C.text : "transparent", color: active ? C.bg : C.textMid, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: fonts.sans, transition: "all 0.15s" }),
 };
+
+// ─── Canvas crop helper ────────────────────────────────────────────────────────
+async function getCroppedBlob(imageSrc, pixelCrop) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = pixelCrop.width;
+      canvas.height = pixelCrop.height;
+      canvas.getContext("2d").drawImage(img, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height, 0, 0, pixelCrop.width, pixelCrop.height);
+      canvas.toBlob(resolve, "image/jpeg", 0.92);
+    };
+    img.onerror = () => resolve(null);
+    img.src = imageSrc;
+  });
+}
+
+// ─── Photo crop modal ──────────────────────────────────────────────────────────
+function PhotoCropModal({ onClose, onSave, onSaveUrl }) {
+  const [phase, setPhase] = useState("drop"); // "drop" | "crop"
+  const [tab, setTab] = useState("upload"); // "upload" | "url"
+  const [src, setSrc] = useState(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedPixels, setCroppedPixels] = useState(null);
+  const [note, setNote] = useState("");
+  const [isMain, setIsMain] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const [urlError, setUrlError] = useState("");
+  const fileRef = useRef(null);
+  const starColor = "#D4A017";
+
+  const handleFile = (file) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    setSrc(URL.createObjectURL(file));
+    setPhase("crop");
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    handleFile(e.dataTransfer.files?.[0]);
+  };
+
+  const handleSave = async () => {
+    if (!src || !croppedPixels) return;
+    setSaving(true);
+    try {
+      const blob = await getCroppedBlob(src, croppedPixels);
+      if (!blob) { alert("Could not process image. Try a different file."); return; }
+      const file = new File([blob], "photo.jpg", { type: "image/jpeg" });
+      await onSave(file, note, isMain);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveUrl = async () => {
+    const trimmed = urlInput.trim();
+    if (!trimmed) { setUrlError("Enter a URL."); return; }
+    try { new URL(trimmed); } catch { setUrlError("Enter a valid URL."); return; }
+    setUrlError("");
+    setSaving(true);
+    try { await onSaveUrl(trimmed, note, isMain); } finally { setSaving(false); }
+  };
+
+  const tabBtn = (active) => ({
+    flex: 1, padding: "10px 0", border: "none", background: "transparent",
+    borderBottom: `2px solid ${active ? C.accent : "transparent"}`,
+    fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, cursor: "pointer",
+    color: active ? C.text : C.textMid, transition: "all 0.15s",
+  });
+
+  const starBtn = (
+    <button type="button" onClick={() => setIsMain(m => !m)}
+      style={{ display: "flex", alignItems: "center", gap: 8, background: "transparent", border: `1.5px solid ${isMain ? starColor : C.border}`, padding: "7px 16px", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: isMain ? starColor : C.textMid, transition: "all 0.15s" }}>
+      <span style={{ fontSize: 17, lineHeight: 1 }}>{isMain ? "★" : "☆"}</span>
+      {isMain ? "Main photo (used across app)" : "Set as main photo"}
+    </button>
+  );
+
+  if (phase === "drop") {
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1200, padding: 16 }}>
+        <div style={{ background: C.card, width: "100%", maxWidth: 480, position: "relative", boxShadow: "0 16px 64px rgba(0,0,0,0.3)" }}>
+          {/* Header */}
+          <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h3 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, margin: 0, fontSize: 19 }}>Add Photo</h3>
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.textLight, cursor: "pointer", lineHeight: 1 }}>×</button>
+          </div>
+
+          {/* Tabs */}
+          <div style={{ display: "flex", borderBottom: `1px solid ${C.borderLight}` }}>
+            <button style={tabBtn(tab === "upload")} onClick={() => setTab("upload")}>Upload from device</button>
+            <button style={tabBtn(tab === "url")} onClick={() => setTab("url")}>Paste image URL</button>
+          </div>
+
+          {tab === "upload" && (
+            <div style={{ padding: 28 }}>
+              <div
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                onClick={() => fileRef.current?.click()}
+                style={{ border: `2px dashed ${dragOver ? C.accent : C.border}`, padding: "48px 24px", textAlign: "center", cursor: "pointer", background: dragOver ? C.accentLight : C.bg, transition: "all 0.15s", userSelect: "none" }}
+              >
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke={dragOver ? C.accent : C.textLight} strokeWidth="1.2" style={{ marginBottom: 14 }}>
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <div style={{ fontSize: 14, fontFamily: fonts.sans, fontWeight: 600, color: dragOver ? C.accent : C.textMid, marginBottom: 6 }}>
+                  {dragOver ? "Drop to add photo" : "Drag & drop or click to select"}
+                </div>
+                <div style={{ fontSize: 11, fontFamily: fonts.sans, color: C.textLight }}>JPG, PNG, WEBP supported · for your own viewing photos</div>
+              </div>
+              <input ref={fileRef} type="file" accept="image/*" onChange={e => handleFile(e.target.files?.[0])} style={{ display: "none" }} />
+            </div>
+          )}
+
+          {tab === "url" && (
+            <div style={{ padding: 24 }}>
+              {/* Hint */}
+              <div style={{ background: C.accentLight, border: `1px solid rgba(184,134,11,0.2)`, padding: "10px 14px", marginBottom: 18, fontSize: 12, fontFamily: fonts.sans, color: C.textMid, lineHeight: 1.55 }}>
+                <strong style={{ color: C.accent, display: "block", marginBottom: 4 }}>Tip: saving listing photos</strong>
+                On Rightmove (or Zoopla), open the listing, right-click any photo and choose <em>"Copy image address"</em>, then paste it below. The photo will link directly from the listing — perfect for keeping a record before it goes offline.
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={s.label}>Image URL</label>
+                <input
+                  type="url"
+                  value={urlInput}
+                  onChange={e => { setUrlInput(e.target.value); setUrlError(""); }}
+                  placeholder="https://media.rightmove.co.uk/..."
+                  style={{ ...s.textInput, borderBottomColor: urlError ? "#c00" : C.border }}
+                  autoFocus
+                />
+                {urlError && <div style={{ fontSize: 10, color: "#c00", fontFamily: fonts.sans, marginTop: 3 }}>{urlError}</div>}
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={s.label}>Note (optional)</label>
+                <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Add a note to this photo..."
+                  style={{ ...s.textarea, minHeight: 52 }} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                {starBtn}
+                <button onClick={handleSaveUrl} disabled={saving || !urlInput.trim()}
+                  style={{ padding: "8px 22px", border: "none", background: C.text, color: C.bg, fontSize: 11, fontWeight: 700, fontFamily: fonts.sans, cursor: "pointer", opacity: (saving || !urlInput.trim()) ? 0.6 : 1, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  {saving ? "Saving…" : "Save Photo"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Crop phase
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1200, padding: 16 }}>
+      <div style={{ background: C.card, width: "100%", maxWidth: 620, position: "relative", boxShadow: "0 16px 64px rgba(0,0,0,0.3)" }}>
+        <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, margin: 0, fontSize: 19 }}>Crop Photo</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.textLight, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Crop canvas */}
+        <div style={{ position: "relative", width: "100%", height: 360, background: "#111" }}>
+          <Cropper
+            image={src}
+            crop={crop}
+            zoom={zoom}
+            aspect={undefined}
+            showGrid
+            onCropChange={setCrop}
+            onZoomChange={setZoom}
+            onCropComplete={(_, pixels) => setCroppedPixels(pixels)}
+            style={{
+              containerStyle: { width: "100%", height: "100%", position: "absolute" },
+              cropAreaStyle: { border: "2px solid white", boxShadow: "0 0 0 9999px rgba(0,0,0,0.55)" },
+            }}
+          />
+          {/* Zoom hint */}
+          <div style={{ position: "absolute", bottom: 8, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,0.5)", padding: "4px 12px", fontSize: 10, fontFamily: fonts.sans, color: "rgba(255,255,255,0.7)", pointerEvents: "none" }}>
+            Drag to move · Pinch or scroll to zoom
+          </div>
+        </div>
+
+        {/* Zoom slider */}
+        <div style={{ padding: "10px 22px 0", display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 10, fontFamily: fonts.sans, color: C.textLight, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em" }}>Zoom</span>
+          <input type="range" min={1} max={3} step={0.05} value={zoom} onChange={e => setZoom(Number(e.target.value))}
+            style={{ flex: 1, accentColor: C.accent }} />
+        </div>
+
+        {/* Note + star + actions */}
+        <div style={{ padding: "14px 22px 22px" }}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={s.label}>Photo Note</label>
+            <textarea
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              placeholder="Add a note to this photo..."
+              style={{ ...s.textarea, minHeight: 52 }}
+            />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => setIsMain(m => !m)}
+              style={{ display: "flex", alignItems: "center", gap: 8, background: "transparent", border: `1.5px solid ${isMain ? starColor : C.border}`, padding: "7px 16px", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: isMain ? starColor : C.textMid, transition: "all 0.15s" }}
+            >
+              <span style={{ fontSize: 17, lineHeight: 1 }}>{isMain ? "★" : "☆"}</span>
+              {isMain ? "Main photo (used across app)" : "Set as main photo"}
+            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setPhase("drop")} style={{ padding: "8px 16px", border: `1.5px solid ${C.border}`, background: "transparent", color: C.textMid, fontSize: 11, fontWeight: 600, fontFamily: fonts.sans, cursor: "pointer" }}>← Back</button>
+              <button onClick={handleSave} disabled={saving || !croppedPixels} style={{ padding: "8px 22px", border: "none", background: C.text, color: C.bg, fontSize: 11, fontWeight: 700, fontFamily: fonts.sans, cursor: "pointer", opacity: (saving || !croppedPixels) ? 0.6 : 1, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                {saving ? "Uploading…" : "Save Photo"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Photo carousel ────────────────────────────────────────────────────────────
+function PhotoCarousel({ propertyId, userId, onMainPhotoChange }) {
+  const [photos, setPhotos] = useState(null); // null = not loaded
+  const [idx, setIdx] = useState(0);
+  const [showCrop, setShowCrop] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [noteText, setNoteText] = useState("");
+  const starColor = "#D4A017";
+
+  // Load on first render
+  useEffect(() => {
+    loadPropertyPhotos(propertyId).then(({ data }) => setPhotos(data || []));
+  }, [propertyId]);
+
+  // Keep index in bounds
+  useEffect(() => {
+    if (photos && idx >= photos.length && photos.length > 0) setIdx(photos.length - 1);
+  }, [photos, idx]);
+
+  const current = photos?.[idx] ?? null;
+
+  const _addPhotoRecord = async (url, note, isMain) => {
+    const sortOrder = photos?.length ?? 0;
+    const { data: photo, error: saveErr } = await savePropertyPhoto(propertyId, { url, note: note || null, is_main: isMain, sort_order: sortOrder });
+    if (saveErr || !photo) { setUploadError(saveErr?.message || "Failed to save photo record."); return; }
+    if (isMain) {
+      const cleared = (photos || []).map(p => ({ ...p, is_main: false }));
+      const next = [...cleared, { ...photo, is_main: true }];
+      setPhotos(next);
+      setIdx(next.length - 1);
+      await setMainPhoto(propertyId, photo.id, url);
+      onMainPhotoChange?.(url);
+    } else {
+      setPhotos(prev => {
+        const next = [...(prev || []), photo];
+        setIdx(next.length - 1);
+        return next;
+      });
+    }
+  };
+
+  const handleSavePhoto = async (file, note, isMain) => {
+    setUploading(true);
+    setUploadError(null);
+    setShowCrop(false);
+    try {
+      const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const { url, error } = await uploadPropertyPhotoMulti(userId, propertyId, suffix, file);
+      if (error || !url) { setUploadError(error?.message || "Upload failed — check your Supabase storage bucket."); return; }
+      await _addPhotoRecord(url, note, isMain);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSavePhotoUrl = async (url, note, isMain) => {
+    setUploading(true);
+    setUploadError(null);
+    setShowCrop(false);
+    try {
+      await _addPhotoRecord(url, note, isMain);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSetMain = async (photo) => {
+    await setMainPhoto(propertyId, photo.id, photo.url);
+    setPhotos(prev => (prev || []).map(p => ({ ...p, is_main: p.id === photo.id })));
+    onMainPhotoChange?.(photo.url);
+  };
+
+  const handleDelete = async (photo) => {
+    if (!confirm("Delete this photo?")) return;
+    await deletePropertyPhoto(photo.id);
+    const next = (photos || []).filter(p => p.id !== photo.id);
+    setPhotos(next);
+    if (photo.is_main) {
+      if (next.length > 0) {
+        await setMainPhoto(propertyId, next[0].id, next[0].url);
+        setPhotos(next.map((p, i) => i === 0 ? { ...p, is_main: true } : { ...p, is_main: false }));
+        onMainPhotoChange?.(next[0].url);
+      } else {
+        await updateProperty(propertyId, { photo_url: null });
+        onMainPhotoChange?.(null);
+      }
+    }
+  };
+
+  const handleSaveNote = async () => {
+    if (!editingNoteId) return;
+    await updatePropertyPhoto(editingNoteId, { note: noteText || null });
+    setPhotos(prev => (prev || []).map(p => p.id === editingNoteId ? { ...p, note: noteText || null } : p));
+    setEditingNoteId(null);
+  };
+
+  if (photos === null) return (
+    <div>
+      <div style={s.sectionHead}>Photos</div>
+      <div style={{ color: C.textLight, fontFamily: fonts.serif, fontSize: 13, fontStyle: "italic" }}>Loading photos…</div>
+    </div>
+  );
+
+  return (
+    <div>
+      {showCrop && <PhotoCropModal onClose={() => setShowCrop(false)} onSave={handleSavePhoto} onSaveUrl={handleSavePhotoUrl} />}
+
+      {uploadError && (
+        <div style={{ background: "#fff0f0", border: `1px solid ${C.red || "#c00"}`, padding: "8px 12px", marginBottom: 10, fontSize: 12, fontFamily: fonts.sans, color: C.red || "#c00", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>{uploadError}</span>
+          <button onClick={() => setUploadError(null)} style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", color: "inherit", lineHeight: 1, padding: "0 0 0 8px" }}>×</button>
+        </div>
+      )}
+
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${C.border}`, paddingBottom: 8, marginBottom: 14 }}>
+        <span style={{ fontSize: 9, letterSpacing: "0.22em", textTransform: "uppercase", fontWeight: 700, fontFamily: fonts.sans, color: C.accent }}>
+          Photos {photos.length > 0 ? `(${photos.length})` : ""}
+        </span>
+        <button onClick={e => { e.stopPropagation(); setShowCrop(true); }} disabled={uploading}
+          style={{ fontSize: 10, background: "transparent", border: `1px solid ${C.border}`, padding: "3px 10px", cursor: "pointer", fontFamily: fonts.sans, fontWeight: 700, color: C.textMid, opacity: uploading ? 0.5 : 1 }}>
+          {uploading ? "Uploading…" : "+ Add Photo"}
+        </button>
+      </div>
+
+      {photos.length === 0 && !uploading && (
+        <div style={{ border: `1.5px dashed ${C.border}`, padding: "22px 16px", textAlign: "center" }}>
+          <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: "0 0 12px", fontSize: 13 }}>No photos yet.</p>
+          <button onClick={e => { e.stopPropagation(); setShowCrop(true); }} style={{ ...s.btn(false), fontSize: 11, padding: "7px 18px" }}>+ Add Photo</button>
+        </div>
+      )}
+
+      {photos.length > 0 && (
+        <>
+          {/* Main viewer */}
+          <div style={{ position: "relative", background: "#0e0e0e", marginBottom: 4, overflow: "hidden" }} onClick={e => e.stopPropagation()}>
+            {current && (
+              <img src={current.url} alt="" style={{ width: "100%", maxHeight: 300, objectFit: "contain", display: "block" }} onError={e => { e.target.style.opacity = "0.3"; }} />
+            )}
+            {/* Prev / Next */}
+            {photos.length > 1 && (
+              <>
+                <button onClick={() => setIdx(i => (i - 1 + photos.length) % photos.length)}
+                  style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.55)", border: "none", color: "white", width: 34, height: 34, cursor: "pointer", fontSize: 20, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 0 }}>‹</button>
+                <button onClick={() => setIdx(i => (i + 1) % photos.length)}
+                  style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.55)", border: "none", color: "white", width: 34, height: 34, cursor: "pointer", fontSize: 20, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 0 }}>›</button>
+              </>
+            )}
+            {/* Top-left badge */}
+            {current?.is_main && (
+              <div style={{ position: "absolute", top: 8, left: 8 }}>
+                <span style={{ background: starColor, color: "white", fontSize: 9, fontFamily: fonts.sans, fontWeight: 700, padding: "3px 8px", letterSpacing: "0.08em" }}>★ MAIN</span>
+              </div>
+            )}
+            {/* Top-right actions */}
+            <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 5 }}>
+              {current && !current.is_main && (
+                <button onClick={() => handleSetMain(current)}
+                  style={{ background: "rgba(0,0,0,0.6)", border: `1px solid ${starColor}`, color: starColor, fontSize: 14, cursor: "pointer", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center" }} title="Set as main photo">☆</button>
+              )}
+              {current && (
+                <button onClick={() => handleDelete(current)}
+                  style={{ background: "rgba(0,0,0,0.6)", border: "1px solid #ef4444", color: "#ef4444", fontSize: 16, cursor: "pointer", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center" }} title="Delete photo">×</button>
+              )}
+            </div>
+            {/* Counter */}
+            {photos.length > 1 && (
+              <div style={{ position: "absolute", bottom: 8, right: 8, background: "rgba(0,0,0,0.55)", color: "white", fontSize: 10, fontFamily: fonts.sans, padding: "2px 8px" }}>
+                {idx + 1} / {photos.length}
+              </div>
+            )}
+          </div>
+
+          {/* Thumbnails strip */}
+          {photos.length > 1 && (
+            <div style={{ display: "flex", gap: 4, overflowX: "auto", padding: "4px 0 6px", scrollbarWidth: "thin" }} onClick={e => e.stopPropagation()}>
+              {photos.map((ph, i) => (
+                <div key={ph.id} onClick={() => setIdx(i)}
+                  style={{ flexShrink: 0, width: 54, height: 42, cursor: "pointer", outline: i === idx ? `2px solid ${C.text}` : `2px solid transparent`, position: "relative", transition: "outline-color 0.15s" }}>
+                  <img src={ph.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  {ph.is_main && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, color: starColor, textShadow: "0 0 3px rgba(0,0,0,0.8)" }}>★</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Note area */}
+          {current && (
+            <div style={{ background: C.card, border: `1px solid ${C.borderLight}`, padding: "10px 14px", marginTop: 2 }} onClick={e => e.stopPropagation()}>
+              {editingNoteId === current.id ? (
+                <div>
+                  <textarea
+                    value={noteText}
+                    onChange={e => setNoteText(e.target.value)}
+                    placeholder="Add a note to this photo…"
+                    style={{ ...s.textarea, minHeight: 52, fontSize: 13, marginBottom: 8 }}
+                    autoFocus
+                  />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={handleSaveNote} style={{ ...s.btn(true), fontSize: 10, padding: "5px 14px" }}>Save</button>
+                    <button onClick={() => setEditingNoteId(null)} style={{ fontSize: 10, background: "transparent", border: "none", color: C.textMid, cursor: "pointer", fontFamily: fonts.sans }}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  {current.note
+                    ? <p style={{ fontFamily: fonts.serif, fontSize: 13, color: C.textMid, margin: 0, lineHeight: 1.55, flex: 1 }}>{current.note}</p>
+                    : <span style={{ fontFamily: fonts.serif, fontSize: 12, color: C.textFaint, fontStyle: "italic" }}>No note — click ✎ to add one.</span>
+                  }
+                  <button onClick={() => { setEditingNoteId(current.id); setNoteText(current.note || ""); }}
+                    style={{ background: "none", border: "none", color: C.textLight, cursor: "pointer", fontSize: 14, padding: "0 2px", flexShrink: 0, lineHeight: 1 }} title="Edit note">✎</button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 // ─── Favicon / site icon ──────────────────────────────────────────────────────
 function SiteIcon({ url, size = 20 }) {
@@ -246,9 +714,12 @@ function DistanceSection({ location, workplaceAddress, propertyId, customValues 
 }
 
 // ─── Property card ─────────────────────────────────────────────────────────────
-function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onDelete, mobile }) {
+function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onDelete, mobile, userId, displayCurrency, rates, onMainPhotoChange }) {
   const [open, setOpen] = useState(false);
   const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
+  const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
+    ? fmtCurrency(gbp, displayCurrency, rates)
+    : fmt(gbp);
 
   return (
     <div style={{ border: `1.5px solid ${open ? C.text : C.border}`, marginBottom: 8, transition: "border-color 0.2s" }}>
@@ -273,7 +744,7 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
           </div>
           {p.location && <div style={{ fontSize: 11, color: C.textMid, fontFamily: fonts.sans, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.location}</div>}
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-            {p.price > 0 && <span style={{ fontSize: 13, fontFamily: fonts.serif, color: C.text, fontWeight: 400 }}>{fmt(p.price)}{p.listing_type === "rent" ? "/mo" : ""}</span>}
+            {p.price > 0 && <span style={{ fontSize: 13, fontFamily: fonts.serif, color: C.text, fontWeight: 400 }}>{fmtPrice(p.price)}{p.listing_type === "rent" ? "/mo" : ""}</span>}
             {p.bedrooms > 0 && <span style={{ fontSize: 11, color: C.textMid, fontFamily: fonts.sans }}>🛏 {p.bedrooms}</span>}
             {p.bathrooms > 0 && <span style={{ fontSize: 11, color: C.textMid, fontFamily: fonts.sans }}>🚿 {p.bathrooms}</span>}
             {p.size > 0 && <span style={{ fontSize: 11, color: C.textMid, fontFamily: fonts.sans }}>{p.size} {p.size_unit}</span>}
@@ -297,6 +768,14 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
       {/* Expanded content */}
       {open && (
         <div style={{ borderTop: `1px solid ${C.borderLight}`, padding: mobile ? "20px 16px" : "24px 20px", background: C.bg }}>
+          {/* Photos carousel */}
+          <div style={{ marginBottom: 28 }} onClick={e => e.stopPropagation()}>
+            <PhotoCarousel
+              propertyId={p.id}
+              userId={userId}
+              onMainPhotoChange={(url) => onMainPhotoChange?.(p.id, url)}
+            />
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 32 }}>
             {/* Left: map + distance */}
             <div>
@@ -323,7 +802,7 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
               <div style={s.sectionHead}>Details</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 16px", marginBottom: 24 }}>
                 {[
-                  ["Price", p.price > 0 ? `${fmt(p.price)}${p.listing_type === "rent" ? "/mo" : ""}` : "—"],
+                  ["Price", p.price > 0 ? `${fmtPrice(p.price)}${p.listing_type === "rent" ? "/mo" : ""}` : "—"],
                   ["Type", p.property_type],
                   ["Bedrooms", p.bedrooms || "—"],
                   ["Bathrooms", p.bathrooms || "—"],
@@ -381,15 +860,29 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
 }
 
 // ─── Property dialog ──────────────────────────────────────────────────────────
-const EMPTY_FORM = { name: "", property_type: "apartment", listing_type: "rent", bedrooms: 2, bathrooms: 1, size: "", size_unit: "sqft", location: "", price: "", website_link: "", notes: "", custom_values: {} };
+const EMPTY_FORM = {
+  name: "", property_type: "apartment", listing_type: "rent", bedrooms: 2, bathrooms: 1,
+  size: "", size_unit: "sqft", location: "", price: "", website_link: "", notes: "",
+  custom_values: {},
+  // virtual fields — stored inside custom_values on save
+  _price_currency: "GBP",
+  _commute_distance: "", _commute_petrol: "", _commute_transport: "",
+};
 
-function PropertyDialog({ property, customFields, defaultListingType, onSave, onClose, mobile, userId }) {
-  const [form, setForm] = useState(property ? { ...EMPTY_FORM, ...property, size: property.size || "", price: property.price || "" } : { ...EMPTY_FORM, listing_type: defaultListingType });
-  const [photoFile, setPhotoFile] = useState(null);
-  const [photoPreview, setPhotoPreview] = useState(property?.photo_url || null);
+function PropertyDialog({ property, customFields, defaultListingType, onSave, onClose, mobile, userId, rates }) {
+  const existingCurrency = property?.custom_values?.__price_currency || "GBP";
+  const existingPriceLocal = property?.custom_values?.__price_local ?? property?.price ?? "";
+  const [form, setForm] = useState(property ? {
+    ...EMPTY_FORM, ...property,
+    size: property.size || "",
+    price: existingPriceLocal,
+    _price_currency: existingCurrency,
+    _commute_distance: property.custom_values?.__commute_distance || "",
+    _commute_petrol:   property.custom_values?.__commute_petrol   || "",
+    _commute_transport:property.custom_values?.__commute_transport|| "",
+  } : { ...EMPTY_FORM, listing_type: defaultListingType });
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
-  const fileRef = useRef(null);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const setCustom = (fieldId, v) => setForm(f => ({ ...f, custom_values: { ...f.custom_values, [fieldId]: v } }));
@@ -419,42 +912,38 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
       if (coord) { customValues.__lat = coord.lat; customValues.__lng = coord.lng; }
     }
 
-    const payload = { ...form, size: form.size === "" ? null : Number(form.size), price: form.price === "" ? null : Number(form.price), custom_values: customValues };
-    delete payload.id; delete payload.user_id; delete payload.created_at; delete payload.updated_at;
+    // Store currency metadata and commute data in custom_values
+    const priceLocal = form.price === "" ? null : Number(form.price);
+    const priceCurrency = form._price_currency || "GBP";
+    const priceGBP = priceLocal != null ? Math.round(toGBP(priceLocal, priceCurrency, rates)) : null;
+    customValues.__price_currency = priceCurrency;
+    customValues.__price_local    = priceLocal;
+    if (form._commute_distance !== "")  customValues.__commute_distance  = Number(form._commute_distance);
+    else                                delete customValues.__commute_distance;
+    if (form._commute_petrol !== "")    customValues.__commute_petrol    = Number(form._commute_petrol);
+    else                                delete customValues.__commute_petrol;
+    if (form._commute_transport !== "") customValues.__commute_transport = Number(form._commute_transport);
+    else                                delete customValues.__commute_transport;
 
-    let photoUrl = form.photo_url || null;
+    const payload = { ...form, size: form.size === "" ? null : Number(form.size), price: priceGBP, custom_values: customValues };
+    delete payload.id; delete payload.user_id; delete payload.created_at; delete payload.updated_at;
+    // Remove virtual fields from payload
+    delete payload._price_currency; delete payload._commute_distance;
+    delete payload._commute_petrol; delete payload._commute_transport;
+
     let saveError = null;
 
     if (property) {
-      // Editing
-      if (photoFile) {
-        const { url, error: uploadErr } = await uploadPropertyPhoto(userId, property.id, photoFile);
-        if (uploadErr) { setSaving(false); setErrors({ _save: "Photo upload failed: " + (uploadErr.message || "check your Supabase storage bucket") }); return; }
-        if (url) photoUrl = url;
-      }
-      const { error } = await updateProperty(property.id, { ...payload, photo_url: photoUrl });
+      const { error } = await updateProperty(property.id, payload);
       saveError = error;
     } else {
-      // Creating
-      const { data, error } = await saveProperty({ ...payload, photo_url: photoUrl });
+      const { error } = await saveProperty(payload);
       saveError = error;
-      if (!error && data && photoFile) {
-        const { url, error: uploadErr } = await uploadPropertyPhoto(userId, data.id, photoFile);
-        if (uploadErr) { setSaving(false); setErrors({ _save: "Property saved but photo upload failed: " + (uploadErr.message || "check your Supabase storage bucket") }); return; }
-        if (url) await updateProperty(data.id, { photo_url: url });
-      }
     }
 
     setSaving(false);
     if (saveError) { setErrors({ _save: saveError.message || "Save failed" }); return; }
     onSave();
-  };
-
-  const handlePhotoChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPhotoFile(file);
-    setPhotoPreview(URL.createObjectURL(file));
   };
 
   const grid2 = { display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: "16px 24px", marginBottom: 16 };
@@ -469,24 +958,6 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
         </div>
 
         <div style={{ padding: "24px" }}>
-          {/* Photo upload */}
-          <div style={{ marginBottom: 24 }}>
-            <div
-              onClick={() => fileRef.current?.click()}
-              style={{ width: "100%", height: 160, border: `1.5px dashed ${C.border}`, cursor: "pointer", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: C.bg, position: "relative" }}
-            >
-              {photoPreview
-                ? <img src={photoPreview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                : (
-                  <div style={{ textAlign: "center", color: C.textLight }}>
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" style={{ marginBottom: 8 }}><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                    <div style={{ fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em" }}>Click to upload photo</div>
-                  </div>
-                )}
-            </div>
-            <input ref={fileRef} type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: "none" }} />
-          </div>
-
           {/* Listing type & property type */}
           <div style={{ ...grid2, marginBottom: 20 }}>
             <div>
@@ -559,14 +1030,49 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
           <div style={grid2}>
             <div>
               <label style={s.label}>{form.listing_type === "rent" ? "Monthly Rent" : "Asking Price"}</label>
-              <div style={{ display: "flex", alignItems: "center", borderBottom: `1.5px solid ${C.border}`, padding: "7px 0" }}>
-                <span style={{ color: C.textLight, fontFamily: fonts.serif, marginRight: 4 }}>£</span>
-                <input type="number" min={0} value={form.price} onChange={e => set("price", e.target.value)} style={{ background: "transparent", border: "none", outline: "none", fontFamily: fonts.serif, fontSize: 16, color: C.text, width: "100%" }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <select
+                  value={form._price_currency}
+                  onChange={e => set("_price_currency", e.target.value)}
+                  style={{ border: `1.5px solid ${C.border}`, borderRadius: 0, background: "transparent", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: C.textMid, padding: "6px 8px", cursor: "pointer", outline: "none", flexShrink: 0 }}
+                >
+                  {SUPPORTED_CURRENCIES.map(code => (
+                    <option key={code} value={code}>{currencySymbol(code)} {code}</option>
+                  ))}
+                </select>
+                <div style={{ flex: 1, display: "flex", alignItems: "center", borderBottom: `1.5px solid ${C.border}`, padding: "7px 0" }}>
+                  <span style={{ color: C.textLight, fontFamily: fonts.serif, marginRight: 4 }}>{currencySymbol(form._price_currency)}</span>
+                  <input type="number" min={0} value={form.price} onChange={e => set("price", e.target.value)} style={{ background: "transparent", border: "none", outline: "none", fontFamily: fonts.serif, fontSize: 16, color: C.text, width: "100%" }} />
+                </div>
               </div>
+              {form._price_currency !== "GBP" && form.price && rates && (
+                <div style={{ fontSize: 10, color: C.textLight, fontFamily: fonts.sans, marginTop: 4 }}>
+                  ≈ {fmt(Math.round(toGBP(Number(form.price), form._price_currency, rates)))} GBP
+                </div>
+              )}
             </div>
             <div>
               <label style={s.label}>Listing Link</label>
               <input type="url" value={form.website_link} onChange={e => set("website_link", e.target.value)} placeholder="https://www.rightmove.co.uk/..." style={s.textInput} />
+            </div>
+          </div>
+
+          {/* Commute */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ ...s.sectionHead, marginTop: 8 }}>Commute to Work</div>
+            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr 1fr", gap: "16px 24px" }}>
+              <div>
+                <label style={s.label}>Distance (miles)</label>
+                <input type="number" min={0} step={0.1} value={form._commute_distance} onChange={e => set("_commute_distance", e.target.value)} placeholder="e.g. 8.5" style={s.textInput} />
+              </div>
+              <div>
+                <label style={s.label}>Car cost per round trip (£)</label>
+                <input type="number" min={0} step={0.5} value={form._commute_petrol} onChange={e => set("_commute_petrol", e.target.value)} placeholder="e.g. 6.00" style={s.textInput} />
+              </div>
+              <div>
+                <label style={s.label}>Public transport per round trip (£)</label>
+                <input type="number" min={0} step={0.5} value={form._commute_transport} onChange={e => set("_commute_transport", e.target.value)} placeholder="e.g. 9.40" style={s.textInput} />
+              </div>
             </div>
           </div>
 
@@ -767,6 +1273,20 @@ export default function GaffTracker() {
   const [sortBy, setSortBy] = useState("date_desc");
   const [filters, setFilters] = useState({});
   const [workplaceAddress, setWorkplaceAddress] = useState(getWorkplaceAddress(user));
+  const [displayCurrency, setDisplayCurrencyState] = useState(getDisplayCurrency);
+  const [rates, setRates] = useState(null);
+
+  // Keep display currency in sync with App.jsx selector via storage events
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === "display_currency") setDisplayCurrencyState(e.newValue || "GBP");
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // Fetch exchange rates once on mount
+  useEffect(() => { fetchRates().then(setRates); }, []);
 
   useEffect(() => {
     if (user) setWorkplaceAddress(getWorkplaceAddress(user));
@@ -826,7 +1346,7 @@ export default function GaffTracker() {
   if (!user) {
     return (
       <div style={{ textAlign: "center", padding: "80px 20px" }}>
-        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, marginBottom: 12 }}>Gaff Tracker</h2>
+        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, marginBottom: 12 }}>Property Tracker</h2>
         <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic" }}>Sign in to track properties.</p>
       </div>
     );
@@ -837,7 +1357,7 @@ export default function GaffTracker() {
       {/* Title + add button */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, margin: "0 0 4px 0", fontSize: mobile ? 24 : 32 }}>Gaff Tracker</h2>
+          <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, margin: "0 0 4px 0", fontSize: mobile ? 24 : 32 }}>Property Tracker</h2>
           <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: 0 }}>Track and compare properties you're considering.</p>
         </div>
         <button onClick={() => { setEditingProperty(null); setDialogOpen(true); }} style={{ padding: "10px 20px", border: "none", background: C.text, color: C.bg, fontSize: 12, fontWeight: 700, fontFamily: fonts.sans, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap" }}>
@@ -897,13 +1417,17 @@ export default function GaffTracker() {
           onEdit={prop => { setEditingProperty(prop); setDialogOpen(true); }}
           onDelete={handleDelete}
           mobile={mobile}
+          userId={user?.id}
+          displayCurrency={displayCurrency}
+          rates={rates}
+          onMainPhotoChange={(propertyId, url) => setProperties(prev => prev.map(prop => prop.id === propertyId ? { ...prop, photo_url: url } : prop))}
         />
       ))}
 
       {/* Footer */}
       <div style={{ marginTop: 48, borderTop: `2px solid ${C.text}`, paddingTop: 16, display: "flex", justifyContent: "space-between" }}>
         <span style={{ fontSize: 10, color: C.textLight, letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: 600 }}>Personal Finance Suite</span>
-        <span style={{ fontSize: 10, color: C.textFaint, letterSpacing: "0.15em", textTransform: "uppercase" }}>Gaff Tracker</span>
+        <span style={{ fontSize: 10, color: C.textFaint, letterSpacing: "0.15em", textTransform: "uppercase" }}>Property Tracker</span>
       </div>
 
       {/* Dialog */}
@@ -913,6 +1437,7 @@ export default function GaffTracker() {
           customFields={customFields}
           defaultListingType={activeTab}
           userId={user?.id}
+          rates={rates}
           onSave={() => { setDialogOpen(false); refresh(); }}
           onClose={() => setDialogOpen(false)}
           mobile={mobile}

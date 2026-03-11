@@ -108,6 +108,68 @@ export async function uploadPropertyPhoto(userId, propertyId, file) {
   return { url: publicUrl };
 }
 
+// ── Gaff Tracker: Multi-photo gallery ──
+// Requires Supabase table: property_photos
+// SQL:
+//   CREATE TABLE property_photos (
+//     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+//     property_id UUID REFERENCES properties(id) ON DELETE CASCADE NOT NULL,
+//     user_id UUID REFERENCES auth.users NOT NULL,
+//     url TEXT NOT NULL, note TEXT,
+//     is_main BOOLEAN DEFAULT false, sort_order INTEGER DEFAULT 0,
+//     created_at TIMESTAMPTZ DEFAULT NOW()
+//   );
+//   ALTER TABLE property_photos ENABLE ROW LEVEL SECURITY;
+//   CREATE POLICY "own" ON property_photos FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+export async function loadPropertyPhotos(propertyId) {
+  if (!supabase) return { data: [], error: null };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { data: [], error: null };
+  return supabase.from("property_photos")
+    .select("*")
+    .eq("property_id", propertyId)
+    .eq("user_id", user.id)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+}
+
+export async function savePropertyPhoto(propertyId, { url, note, is_main, sort_order }) {
+  if (!supabase) return { error: { message: "Supabase not configured" } };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: { message: "Not logged in" } };
+  return supabase.from("property_photos")
+    .insert({ property_id: propertyId, user_id: user.id, url, note: note || null, is_main: !!is_main, sort_order: sort_order || 0 })
+    .select().single();
+}
+
+export async function updatePropertyPhoto(id, data) {
+  if (!supabase) return { error: { message: "Supabase not configured" } };
+  return supabase.from("property_photos").update(data).eq("id", id).select().single();
+}
+
+export async function deletePropertyPhoto(id) {
+  if (!supabase) return { error: { message: "Supabase not configured" } };
+  return supabase.from("property_photos").delete().eq("id", id);
+}
+
+export async function uploadPropertyPhotoMulti(userId, propertyId, suffix, file) {
+  if (!supabase) return { error: { message: "Supabase not configured" } };
+  const ext = (file.name || "jpg").split(".").pop() || "jpg";
+  const path = `${userId}/${propertyId}/${suffix}.${ext}`;
+  const { error } = await supabase.storage.from("property-photos").upload(path, file, { upsert: true });
+  if (error) return { error };
+  const { data: { publicUrl } } = supabase.storage.from("property-photos").getPublicUrl(path);
+  return { url: publicUrl };
+}
+
+export async function setMainPhoto(propertyId, photoId, photoUrl) {
+  if (!supabase) return { error: { message: "Supabase not configured" } };
+  await supabase.from("property_photos").update({ is_main: false }).eq("property_id", propertyId);
+  await supabase.from("property_photos").update({ is_main: true }).eq("id", photoId);
+  return updateProperty(propertyId, { photo_url: photoUrl });
+}
+
 // ── Gaff Tracker: Custom Fields ("Things I Care About") ──
 // Requires Supabase table: custom_fields
 

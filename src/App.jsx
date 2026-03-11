@@ -3,14 +3,15 @@ import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { C, fonts } from "./lib/tokens";
 import { useIsMobile, useAuth } from "./lib/hooks";
 import { uploadAvatar, getAvatarUrl } from "./lib/supabase";
+import { SUPPORTED_CURRENCIES, currencySymbol, getDisplayCurrency, setDisplayCurrency } from "./lib/currency";
 import AuthModal from "./components/AuthModal";
 import ScenarioManager from "./components/ScenarioManager";
 
 const modules = [
+  { key: "gaffTracker", label: "Property Tracker", path: "/gaff" },
   { key: "buyVsRent", label: "Buy Scenario", path: "/" },
   { key: "sandbox", label: "Rent vs Buy", path: "/sandbox" },
-  { key: "financeTracker", label: "Personal Finance Tracker", path: null },
-  { key: "gaffTracker", label: "Gaff Tracker", path: "/gaff" },
+  { key: "financeTracker", label: "Personal Finance Tracker", path: "/finance" },
   { key: "comparison", label: "Property Comparison", path: "/compare" },
   { key: "mapView", label: "Map View", path: "/map" },
 ];
@@ -22,7 +23,15 @@ export default function App() {
   const location = useLocation();
   const [showAuth, setShowAuth] = useState(false);
   const [showScenarios, setShowScenarios] = useState(false);
+  const [displayCurrency, setDisplayCurrencyState] = useState(getDisplayCurrency);
   const fileInputRef = useRef(null);
+
+  const handleCurrencyChange = (code) => {
+    setDisplayCurrency(code);
+    setDisplayCurrencyState(code);
+    // Propagate via storage event so GaffTracker re-reads it
+    window.dispatchEvent(new StorageEvent("storage", { key: "display_currency", newValue: code }));
+  };
 
   const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -50,6 +59,21 @@ export default function App() {
           Personal Finance Suite
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* Currency selector */}
+          <select
+            value={displayCurrency}
+            onChange={(e) => handleCurrencyChange(e.target.value)}
+            title="Display currency for property prices"
+            style={{
+              border: `1.5px solid ${C.border}`, background: "transparent",
+              fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.textMid,
+              padding: "5px 8px", cursor: "pointer", outline: "none",
+            }}
+          >
+            {SUPPORTED_CURRENCIES.map((code) => (
+              <option key={code} value={code}>{currencySymbol(code)} {code}</option>
+            ))}
+          </select>
           {/* Scenario icon */}
           <button title="Scenarios" onClick={() => {
             if (!auth.user) setShowAuth(true);
