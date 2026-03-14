@@ -713,134 +713,65 @@ function DistanceSection({ location, workplaceAddress, propertyId, customValues 
   );
 }
 
-// ─── Property card (Moda Living inspired) ──────────────────────────────────────
-function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onDelete, mobile, userId, displayCurrency, rates, onMainPhotoChange }) {
-  const [open, setOpen] = useState(false);
+// ─── Property detail modal ─────────────────────────────────────────────────────
+function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEdit, onClose, mobile, userId, displayCurrency, rates, onMainPhotoChange }) {
   const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
   const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
     ? fmtCurrency(gbp, displayCurrency, rates)
     : fmt(gbp);
 
-  // Stat icons (SVG) for the bottom row — beds, baths, size, size-per-room
-  const stats = [
-    p.bedrooms > 0 && { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M3 7v11"/><path d="M21 7v11"/><path d="M3 18h18"/><path d="M3 11h18"/><path d="M3 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/><path d="M13 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/></svg>, val: p.bedrooms },
-    p.bathrooms > 0 && { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M4 12h16a1 1 0 011 1v3a4 4 0 01-4 4H7a4 4 0 01-4-4v-3a1 1 0 011-1z"/><path d="M6 12V5a2 2 0 012-2h1"/></svg>, val: p.bathrooms },
-    p.size > 0 && { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>, val: p.size },
-    sizePerRoom && { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>, val: sizePerRoom },
-  ].filter(Boolean);
+  // Prevent body scroll while modal open
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, []);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", background: C.card, borderRadius: 6, overflow: "hidden", transition: "box-shadow 0.2s", boxShadow: open ? "0 4px 24px rgba(0,0,0,0.10)" : "0 1px 4px rgba(0,0,0,0.04)" }}>
-      {/* Image area */}
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1100, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: mobile ? "0" : "32px 16px", overflowY: "auto" }}
+      onClick={onClose}
+    >
       <div
-        style={{ position: "relative", width: "100%", paddingTop: "66%", background: "#f0f0f0", cursor: "pointer", overflow: "hidden" }}
-        onClick={() => setOpen(!open)}
+        style={{ background: C.card, width: "100%", maxWidth: 860, borderRadius: mobile ? 0 : 12, boxShadow: "0 24px 80px rgba(0,0,0,0.22)", position: "relative", marginBottom: mobile ? 0 : 32, minHeight: mobile ? "100dvh" : "auto" }}
+        onClick={e => e.stopPropagation()}
       >
-        {/* Placeholder icon */}
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={C.textFaint} strokeWidth="1"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        </div>
-        {p.photo_url && (
-          <img src={p.photo_url} alt={p.name} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />
-        )}
-
-        {/* Status badge — top right */}
-        <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 6 }}>
-          <span style={{ background: C.pill, color: C.pillText, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, padding: "5px 14px", borderRadius: 20 }}>
-            {p.listing_type === "rent" ? "To Rent" : "For Sale"}
-          </span>
-        </div>
-
-        {/* Arrow button — bottom right */}
-        <div
-          style={{ position: "absolute", bottom: 14, right: 14, width: 40, height: 40, borderRadius: "50%", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.12)", cursor: "pointer", transition: "transform 0.15s" }}
-          onClick={e => { e.stopPropagation(); setOpen(!open); }}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.text} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
-          </svg>
-        </div>
-      </div>
-
-      {/* Card body */}
-      <div style={{ padding: "18px 20px 0" }}>
-        {/* Price + tags row */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-          <div style={{ fontFamily: fonts.sans, fontSize: mobile ? 22 : 26, fontWeight: 700, color: C.text, letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-            {p.price > 0 ? `${fmtPrice(p.price)}${p.listing_type === "rent" ? "pcm" : ""}` : "Price TBC"}
+        {/* Modal header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 28px", borderBottom: `1px solid ${C.borderLight}` }}>
+          <div>
+            <div style={{ fontFamily: fonts.sans, fontSize: 20, fontWeight: 700, color: C.text, marginBottom: 2 }}>{p.name}</div>
+            {p.location && <div style={{ fontFamily: fonts.sans, fontSize: 13, color: C.textMid }}>{p.location}</div>}
           </div>
-          <div style={{ display: "flex", gap: 6, flexShrink: 0, marginLeft: 12 }}>
-            {p.property_type && (
-              <span style={{ border: `1.5px solid ${C.text}`, borderRadius: 20, padding: "4px 12px", fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, color: C.text, textTransform: "capitalize", whiteSpace: "nowrap" }}>
-                {p.property_type}
-              </span>
-            )}
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button onClick={() => { onClose(); onEdit(p); }} style={{ padding: "8px 18px", border: `1.5px solid ${C.border}`, borderRadius: 20, background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: C.textMid }}>
+              Edit
+            </button>
+            <button onClick={onClose} style={{ width: 36, height: 36, border: `1.5px solid ${C.border}`, borderRadius: "50%", background: "transparent", cursor: "pointer", fontSize: 20, color: C.textLight, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>×</button>
           </div>
         </div>
 
-        {/* Location + name */}
-        <div style={{ fontFamily: fonts.sans, fontSize: 13, color: C.textMid, marginBottom: 2, lineHeight: 1.4 }}>
-          {p.name}{p.location ? `, ${p.location}` : ""}
-        </div>
-
-        {/* Listing link */}
-        {p.website_link && (
-          <div style={{ marginBottom: 2 }} onClick={e => e.stopPropagation()}>
-            <a href={p.website_link} target="_blank" rel="noreferrer" style={{ fontSize: 11, fontFamily: fonts.sans, color: C.textLight, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <SiteIcon url={p.website_link} size={14} /> View listing
-            </a>
-          </div>
-        )}
-      </div>
-
-      {/* Stats row — icons with numbers */}
-      {stats.length > 0 && (
-        <div style={{ display: "flex", borderTop: `1px solid ${C.borderLight}`, margin: "14px 0 0" }}>
-          {stats.map((st, i) => (
-            <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "14px 8px", borderRight: i < stats.length - 1 ? `1px solid ${C.borderLight}` : "none" }}>
-              {st.icon}
-              <span style={{ fontSize: 13, fontFamily: fonts.sans, fontWeight: 600, color: C.text }}>{st.val}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Action buttons row */}
-      <div style={{ display: "flex", borderTop: `1px solid ${C.borderLight}`, padding: 0 }} onClick={e => e.stopPropagation()}>
-        <button onClick={() => onEdit(p)} style={{ flex: 1, padding: "10px", border: "none", borderRight: `1px solid ${C.borderLight}`, background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.textMid, transition: "color 0.15s" }}>
-          Edit
-        </button>
-        <button onClick={() => setOpen(!open)} style={{ flex: 1, padding: "10px", border: "none", borderRight: `1px solid ${C.borderLight}`, background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.textMid }}>
-          {open ? "Collapse" : "Details"}
-        </button>
-        <button onClick={() => { if (confirm(`Delete "${p.name}"?`)) onDelete(p.id); }} style={{ flex: 1, padding: "10px", border: "none", background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.red }}>
-          Remove
-        </button>
-      </div>
-
-      {/* Expanded content */}
-      {open && (
-        <div style={{ borderTop: `1px solid ${C.borderLight}`, padding: mobile ? "20px 16px" : "24px 20px", background: "#fafafa" }}>
-          {/* Photos carousel */}
-          <div style={{ marginBottom: 28 }} onClick={e => e.stopPropagation()}>
+        {/* Modal body */}
+        <div style={{ padding: mobile ? "20px 16px" : "28px" }}>
+          {/* Photos */}
+          <div style={{ marginBottom: 28 }}>
             <PhotoCarousel
               propertyId={p.id}
               userId={userId}
               onMainPhotoChange={(url) => onMainPhotoChange?.(p.id, url)}
             />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 32 }}>
+
+          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 36 }}>
             {/* Left: map + distance */}
             <div>
               {p.location && (
                 <>
                   <div style={s.sectionHead}>Location</div>
                   <div style={{ fontSize: 13, color: C.textMid, fontFamily: fonts.sans, marginBottom: 12 }}>{p.location}</div>
-                  <div style={{ marginBottom: 24, borderRadius: 6, overflow: "hidden", border: `1px solid ${C.borderLight}` }}>
+                  <div style={{ marginBottom: 24, borderRadius: 8, overflow: "hidden", border: `1px solid ${C.borderLight}` }}>
                     <iframe
                       title="map"
                       src={`https://maps.google.com/maps?q=${encodeURIComponent(p.location)}&output=embed&z=14&hl=en`}
-                      width="100%" height="200" style={{ border: 0, display: "block" }} loading="lazy"
+                      width="100%" height="220" style={{ border: 0, display: "block" }} loading="lazy"
                     />
                   </div>
                   <div style={s.sectionHead}>Distance to Work</div>
@@ -852,7 +783,7 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
             {/* Right: details + custom fields + notes */}
             <div>
               <div style={s.sectionHead}>Details</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 16px", marginBottom: 24 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 16px", marginBottom: 28 }}>
                 {[
                   ["Price", p.price > 0 ? `${fmtPrice(p.price)}${p.listing_type === "rent" ? "/mo" : ""}` : "—"],
                   ["Type", p.property_type],
@@ -861,9 +792,9 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
                   p.size > 0 && ["Size", `${p.size} ${p.size_unit}`],
                   sizePerRoom && ["Per Bedroom", `${sizePerRoom} ${p.size_unit}`],
                 ].filter(Boolean).map(([k, v]) => (
-                  <div key={k}>
-                    <div style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 2 }}>{k}</div>
-                    <div style={{ fontSize: 14, fontFamily: fonts.sans, color: C.text }}>{v}</div>
+                  <div key={k} style={{ padding: "12px", background: "#fafafa", borderRadius: 8 }}>
+                    <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 4 }}>{k}</div>
+                    <div style={{ fontSize: 15, fontFamily: fonts.sans, fontWeight: 600, color: C.text, textTransform: "capitalize" }}>{v}</div>
                   </div>
                 ))}
               </div>
@@ -901,11 +832,148 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
                   <p style={{ fontSize: 14, fontFamily: fonts.sans, color: C.textMid, lineHeight: 1.6, margin: 0, whiteSpace: "pre-wrap" }}>{p.notes}</p>
                 </>
               )}
+
+              {p.website_link && (
+                <div style={{ marginTop: 24 }}>
+                  <a href={p.website_link} target="_blank" rel="noreferrer"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 20px", border: `1.5px solid ${C.text}`, borderRadius: 20, textDecoration: "none", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: C.text }}>
+                    <SiteIcon url={p.website_link} size={16} /> View Listing
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
+  );
+}
+
+// ─── Property card (Moda Living inspired) ──────────────────────────────────────
+function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onDelete, mobile, userId, displayCurrency, rates, onMainPhotoChange }) {
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [imgHovered, setImgHovered] = useState(false);
+  const [arrowHovered, setArrowHovered] = useState(false);
+  const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
+  const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
+    ? fmtCurrency(gbp, displayCurrency, rates)
+    : fmt(gbp);
+
+  const stats = [
+    p.bedrooms > 0 && { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M3 7v11"/><path d="M21 7v11"/><path d="M3 18h18"/><path d="M3 11h18"/><path d="M3 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/><path d="M13 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/></svg>, val: p.bedrooms },
+    p.bathrooms > 0 && { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M4 12h16a1 1 0 011 1v3a4 4 0 01-4 4H7a4 4 0 01-4-4v-3a1 1 0 011-1z"/><path d="M6 12V5a2 2 0 012-2h1"/></svg>, val: p.bathrooms },
+    p.size > 0 && { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>, val: p.size },
+    sizePerRoom && { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>, val: sizePerRoom },
+  ].filter(Boolean);
+
+  return (
+    <>
+      <div style={{ display: "flex", flexDirection: "column", background: C.card, borderRadius: 6, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", transition: "box-shadow 0.2s" }}>
+        {/* Image area */}
+        <div
+          style={{ position: "relative", width: "100%", paddingTop: "66%", background: "#f0f0f0", cursor: "pointer", overflow: "hidden" }}
+          onClick={() => setDetailOpen(true)}
+          onMouseEnter={() => setImgHovered(true)}
+          onMouseLeave={() => setImgHovered(false)}
+        >
+          {/* Placeholder icon */}
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={C.textFaint} strokeWidth="1"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          </div>
+          {p.photo_url && (
+            <img
+              src={p.photo_url} alt={p.name}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.4s ease", transform: imgHovered ? "scale(1.06)" : "scale(1)" }}
+              onError={e => { e.target.style.display = "none"; }}
+            />
+          )}
+
+          {/* Status badge — top right */}
+          <div style={{ position: "absolute", top: 12, right: 12 }}>
+            <span style={{ background: C.pill, color: C.pillText, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, padding: "5px 14px", borderRadius: 20 }}>
+              {p.listing_type === "rent" ? "To Rent" : "For Sale"}
+            </span>
+          </div>
+
+          {/* Arrow button — bottom right, inverts on hover */}
+          <div
+            onMouseEnter={() => setArrowHovered(true)}
+            onMouseLeave={() => setArrowHovered(false)}
+            onClick={e => { e.stopPropagation(); setDetailOpen(true); }}
+            style={{
+              position: "absolute", bottom: 14, right: 14,
+              width: 40, height: 40, borderRadius: "50%",
+              background: arrowHovered ? "rgba(80,80,80,0.85)" : "#fff",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)", cursor: "pointer",
+              transition: "background 0.15s",
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={arrowHovered ? "#fff" : C.text} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transition: "stroke 0.15s" }}>
+              <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+            </svg>
+          </div>
+        </div>
+
+        {/* Card body */}
+        <div style={{ padding: "18px 20px 0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+            <div style={{ fontFamily: fonts.sans, fontSize: mobile ? 22 : 26, fontWeight: 700, color: C.text, letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+              {p.price > 0 ? `${fmtPrice(p.price)}${p.listing_type === "rent" ? "pcm" : ""}` : "Price TBC"}
+            </div>
+            {p.property_type && (
+              <span style={{ border: `1.5px solid ${C.text}`, borderRadius: 20, padding: "4px 12px", fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, color: C.text, textTransform: "capitalize", whiteSpace: "nowrap", marginLeft: 12, flexShrink: 0 }}>
+                {p.property_type}
+              </span>
+            )}
+          </div>
+          <div style={{ fontFamily: fonts.sans, fontSize: 13, color: C.textMid, lineHeight: 1.4 }}>
+            {p.name}{p.location ? `, ${p.location}` : ""}
+          </div>
+        </div>
+
+        {/* Stats row */}
+        {stats.length > 0 && (
+          <div style={{ display: "flex", borderTop: `1px solid ${C.borderLight}`, margin: "14px 0 0" }}>
+            {stats.map((st, i) => (
+              <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "14px 8px", borderRight: i < stats.length - 1 ? `1px solid ${C.borderLight}` : "none" }}>
+                {st.icon}
+                <span style={{ fontSize: 13, fontFamily: fonts.sans, fontWeight: 600, color: C.text }}>{st.val}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div style={{ display: "flex", borderTop: `1px solid ${C.borderLight}` }}>
+          <button onClick={() => onEdit(p)} style={{ flex: 1, padding: "10px", border: "none", borderRight: `1px solid ${C.borderLight}`, background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.textMid }}>
+            Edit
+          </button>
+          <button onClick={() => setDetailOpen(true)} style={{ flex: 1, padding: "10px", border: "none", borderRight: `1px solid ${C.borderLight}`, background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.textMid }}>
+            Details
+          </button>
+          <button onClick={() => { if (confirm(`Delete "${p.name}"?`)) onDelete(p.id); }} style={{ flex: 1, padding: "10px", border: "none", background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.red }}>
+            Remove
+          </button>
+        </div>
+      </div>
+
+      {/* Detail modal */}
+      {detailOpen && (
+        <PropertyDetailModal
+          property={p}
+          customFields={customFields}
+          workplaceAddress={workplaceAddress}
+          onEdit={onEdit}
+          onClose={() => setDetailOpen(false)}
+          mobile={mobile}
+          userId={userId}
+          displayCurrency={displayCurrency}
+          rates={rates}
+          onMainPhotoChange={onMainPhotoChange}
+        />
+      )}
+    </>
   );
 }
 
