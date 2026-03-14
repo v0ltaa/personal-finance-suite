@@ -59,6 +59,29 @@ import {
 
 const GMAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
+// ─── Inject hover-animation CSS once ─────────────────────────────────────────
+let _stylesInjected = false;
+function injectCardStyles() {
+  if (_stylesInjected) return;
+  _stylesInjected = true;
+  const el = document.createElement("style");
+  el.textContent = `
+    .prop-img { transition: transform 0.4s ease; }
+    .prop-tile:hover .prop-img { transform: scale(1.06); }
+    .prop-arrow-fill {
+      position: absolute; inset: 0; border-radius: 50%;
+      background: rgba(70,70,70,0.88);
+      clip-path: circle(0% at 50% 100%);
+      transition: clip-path 0.3s ease;
+      pointer-events: none;
+    }
+    .prop-tile:hover .prop-arrow-fill { clip-path: circle(150% at 50% 100%); }
+    .prop-tile:hover .prop-arrow-svg { stroke: #fff; }
+    .prop-arrow-svg { transition: stroke 0.3s ease; }
+  `;
+  document.head.appendChild(el);
+}
+
 // ─── Shared styles ────────────────────────────────────────────────────────────
 const s = {
   label: { fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.textLight, letterSpacing: "0.12em", textTransform: "uppercase", display: "block", marginBottom: 6 },
@@ -713,82 +736,239 @@ function DistanceSection({ location, workplaceAddress, propertyId, customValues 
   );
 }
 
-// ─── Property card ─────────────────────────────────────────────────────────────
-function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onDelete, mobile, userId, displayCurrency, rates, onMainPhotoChange }) {
-  const [open, setOpen] = useState(false);
+// ─── Modal carousel (clean, cover-fit, Moda style nav) ────────────────────────
+function ModalCarousel({ propertyId, userId, onMainPhotoChange }) {
+  const [photos, setPhotos] = useState(null);
+  const [idx, setIdx] = useState(0);
+  const [showCrop, setShowCrop] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const starColor = "#D4A017";
+
+  useEffect(() => {
+    loadPropertyPhotos(propertyId).then(({ data }) => setPhotos(data || []));
+  }, [propertyId]);
+
+  useEffect(() => {
+    if (photos && idx >= photos.length && photos.length > 0) setIdx(photos.length - 1);
+  }, [photos, idx]);
+
+  const current = photos?.[idx] ?? null;
+
+  const _addPhotoRecord = async (url, note, isMain) => {
+    const { data: photo, error } = await savePropertyPhoto(propertyId, { url, note: note || null, is_main: isMain, sort_order: photos?.length ?? 0 });
+    if (error || !photo) return;
+    if (isMain) {
+      const cleared = (photos || []).map(p => ({ ...p, is_main: false }));
+      const next = [...cleared, { ...photo, is_main: true }];
+      setPhotos(next); setIdx(next.length - 1);
+      await setMainPhoto(propertyId, photo.id, url);
+      onMainPhotoChange?.(url);
+    } else {
+      setPhotos(prev => { const next = [...(prev || []), photo]; setIdx(next.length - 1); return next; });
+    }
+  };
+
+  const handleSavePhoto = async (file, note, isMain) => {
+    setUploading(true); setShowCrop(false);
+    const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const { url, error } = await uploadPropertyPhotoMulti(userId, propertyId, suffix, file);
+    if (!error && url) await _addPhotoRecord(url, note, isMain);
+    setUploading(false);
+  };
+
+  const handleSavePhotoUrl = async (url, note, isMain) => {
+    setUploading(true); setShowCrop(false);
+    await _addPhotoRecord(url, note, isMain);
+    setUploading(false);
+  };
+
+  const handleSetMain = async (photo) => {
+    await setMainPhoto(propertyId, photo.id, photo.url);
+    setPhotos(prev => (prev || []).map(p => ({ ...p, is_main: p.id === photo.id })));
+    onMainPhotoChange?.(photo.url);
+  };
+
+  const handleDelete = async (photo) => {
+    if (!confirm("Delete this photo?")) return;
+    await deletePropertyPhoto(photo.id);
+    const next = (photos || []).filter(p => p.id !== photo.id);
+    setPhotos(next);
+    if (photo.is_main && next.length > 0) {
+      await setMainPhoto(propertyId, next[0].id, next[0].url);
+      setPhotos(next.map((p, i) => ({ ...p, is_main: i === 0 })));
+      onMainPhotoChange?.(next[0].url);
+    } else if (photo.is_main) {
+      onMainPhotoChange?.(null);
+    }
+  };
+
+  if (photos === null) return <div style={{ height: 320, background: "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontFamily: fonts.sans, color: C.textLight, fontSize: 13 }}>Loading…</span></div>;
+
+  return (
+    <div>
+      {showCrop && <PhotoCropModal onClose={() => setShowCrop(false)} onSave={handleSavePhoto} onSaveUrl={handleSavePhotoUrl} />}
+
+      {/* Main image — cover fit, no black bars */}
+      <div style={{ position: "relative", width: "100%", paddingTop: "62%", background: "#f0f0f0", overflow: "hidden" }}>
+        {photos.length === 0 ? (
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke={C.textFaint} strokeWidth="1"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            <button onClick={() => setShowCrop(true)} style={{ padding: "8px 20px", border: `1.5px solid ${C.border}`, borderRadius: 20, background: "#fff", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, cursor: "pointer", color: C.textMid }}>
+              {uploading ? "Uploading…" : "+ Add Photo"}
+            </button>
+          </div>
+        ) : (
+          <>
+            {current && (
+              <img src={current.url} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }} onError={e => { e.target.style.opacity = "0.3"; }} />
+            )}
+            {/* Set main / delete overlay — top right */}
+            <div style={{ position: "absolute", top: 10, right: 10, display: "flex", gap: 6 }}>
+              {current && !current.is_main && (
+                <button onClick={() => handleSetMain(current)} title="Set as main photo"
+                  style={{ background: "rgba(0,0,0,0.5)", border: `1px solid ${starColor}`, color: starColor, fontSize: 15, cursor: "pointer", width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>☆</button>
+              )}
+              {current?.is_main && (
+                <span style={{ background: starColor, color: "#fff", fontSize: 10, fontFamily: fonts.sans, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>★ Main</span>
+              )}
+              {current && (
+                <button onClick={() => handleDelete(current)} title="Delete photo"
+                  style={{ background: "rgba(0,0,0,0.5)", border: "1px solid #ef4444", color: "#ef4444", fontSize: 16, cursor: "pointer", width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Counter + nav row */}
+      {photos.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0 0" }}>
+          <button onClick={() => setShowCrop(true)} disabled={uploading}
+            style={{ background: "transparent", border: "none", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: C.textLight, cursor: "pointer", padding: 0 }}>
+            {uploading ? "Uploading…" : "+ Add Photo"}
+          </button>
+          {photos.length > 1 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontFamily: fonts.sans, fontSize: 13, color: C.textMid }}>{idx + 1} / {photos.length}</span>
+              <button onClick={() => setIdx(i => (i - 1 + photos.length) % photos.length)}
+                style={{ width: 36, height: 36, borderRadius: "50%", border: `1.5px solid ${C.border}`, background: "#fff", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: C.text, fontWeight: 300 }}>‹</button>
+              <button onClick={() => setIdx(i => (i + 1) % photos.length)}
+                style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: C.text, cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 300 }}>›</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Property detail modal (Moda Living layout) ────────────────────────────────
+function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEdit, onClose, mobile, userId, displayCurrency, rates, onMainPhotoChange }) {
   const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
   const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
     ? fmtCurrency(gbp, displayCurrency, rates)
     : fmt(gbp);
 
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, []);
+
+  const darkStats = [
+    p.bedrooms > 0 && { label: "Beds", val: p.bedrooms, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5"><path d="M3 7v11"/><path d="M21 7v11"/><path d="M3 18h18"/><path d="M3 11h18"/><path d="M3 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/><path d="M13 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/></svg> },
+    p.bathrooms > 0 && { label: "Baths", val: p.bathrooms, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5"><path d="M4 12h16a1 1 0 011 1v3a4 4 0 01-4 4H7a4 4 0 01-4-4v-3a1 1 0 011-1z"/><path d="M6 12V5a2 2 0 012-2h1"/></svg> },
+    p.size > 0 && { label: p.size_unit || "sqft", val: p.size, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18"/><path d="M9 3v18"/></svg> },
+    sizePerRoom && { label: "per bed", val: sizePerRoom, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
+  ].filter(Boolean);
+
   return (
-    <div style={{ border: `1.5px solid ${open ? C.text : C.border}`, marginBottom: 8, transition: "border-color 0.2s" }}>
-      {/* Collapsed bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 0, cursor: "pointer", background: C.card }}
-        onClick={() => setOpen(!open)}>
-        {/* Photo */}
-        <div style={{ width: mobile ? 64 : 88, height: mobile ? 64 : 72, flexShrink: 0, overflow: "hidden", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ position: "relative", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={C.textFaint} strokeWidth="1.2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-            {p.photo_url && <img src={p.photo_url} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />}
-          </div>
-        </div>
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1100, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: mobile ? "0" : "24px 16px", overflowY: "auto" }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: C.card, width: "100%", maxWidth: 980, borderRadius: mobile ? 0 : 12, boxShadow: "0 32px 100px rgba(0,0,0,0.28)", position: "relative", marginBottom: mobile ? 0 : 24 }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Close button */}
+        <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, zIndex: 10, width: 36, height: 36, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)", cursor: "pointer", fontSize: 20, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>×</button>
 
-        {/* Main info */}
-        <div style={{ flex: 1, padding: mobile ? "10px 12px" : "12px 16px", minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: fonts.serif, fontSize: mobile ? 15 : 17, color: C.text, fontWeight: 400 }}>{p.name}</span>
-            <span style={{ fontSize: 9, fontFamily: fonts.sans, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "2px 6px", background: p.property_type === "house" ? C.greenBg : C.accentLight, color: p.property_type === "house" ? C.green : C.accent, border: `1px solid ${p.property_type === "house" ? C.greenBorder : "rgba(184,134,11,0.2)"}` }}>
-              {p.property_type}
-            </span>
-          </div>
-          {p.location && <div style={{ fontSize: 11, color: C.textMid, fontFamily: fonts.sans, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.location}</div>}
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-            {p.price > 0 && <span style={{ fontSize: 13, fontFamily: fonts.serif, color: C.text, fontWeight: 400 }}>{fmtPrice(p.price)}{p.listing_type === "rent" ? "/mo" : ""}</span>}
-            {p.bedrooms > 0 && <span style={{ fontSize: 11, color: C.textMid, fontFamily: fonts.sans }}>🛏 {p.bedrooms}</span>}
-            {p.bathrooms > 0 && <span style={{ fontSize: 11, color: C.textMid, fontFamily: fonts.sans }}>🚿 {p.bathrooms}</span>}
-            {p.size > 0 && <span style={{ fontSize: 11, color: C.textMid, fontFamily: fonts.sans }}>{p.size} {p.size_unit}</span>}
-          </div>
-        </div>
-
-        {/* Right actions */}
-        <div style={{ display: "flex", alignItems: "center", gap: 0, paddingRight: 12, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-          {p.website_link && (
-            <a href={p.website_link} target="_blank" rel="noreferrer" title="View listing"
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, padding: 0 }}>
-              <SiteIcon url={p.website_link} size={18} />
-            </a>
-          )}
-          <button onClick={() => onEdit(p)} style={{ width: 32, height: 32, border: "none", background: "transparent", cursor: "pointer", color: C.textLight, fontSize: 12, fontFamily: fonts.sans }}>✎</button>
-          <button onClick={() => { if (confirm(`Delete "${p.name}"?`)) onDelete(p.id); }} style={{ width: 32, height: 32, border: "none", background: "transparent", cursor: "pointer", color: C.red, fontSize: 14 }}>×</button>
-        </div>
-        <div style={{ paddingRight: 12, color: C.textMid, fontSize: 14, transform: open ? "rotate(0)" : "rotate(-90deg)", transition: "transform 0.2s", flexShrink: 0, pointerEvents: "none" }}>▾</div>
-      </div>
-
-      {/* Expanded content */}
-      {open && (
-        <div style={{ borderTop: `1px solid ${C.borderLight}`, padding: mobile ? "20px 16px" : "24px 20px", background: C.bg }}>
-          {/* Photos carousel */}
-          <div style={{ marginBottom: 28 }} onClick={e => e.stopPropagation()}>
-            <PhotoCarousel
+        {/* Top section: carousel + dark summary */}
+        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "3fr 2fr" }}>
+          {/* Left: carousel */}
+          <div style={{ padding: mobile ? "0" : "0", overflow: "hidden", borderRadius: mobile ? "12px 12px 0 0" : "12px 0 0 0" }}>
+            <ModalCarousel
               propertyId={p.id}
               userId={userId}
               onMainPhotoChange={(url) => onMainPhotoChange?.(p.id, url)}
             />
+            {/* Nav row shown inside the carousel component */}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 32 }}>
+
+          {/* Right: dark summary box */}
+          <div style={{ background: "#1a1a1a", padding: mobile ? "24px 20px" : "32px 28px", display: "flex", flexDirection: "column", gap: 0, borderRadius: mobile ? 0 : "0 12px 0 0" }}>
+            {/* Status */}
+            <div style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+              {p.listing_type === "rent" ? "To Rent" : "For Sale"}
+            </div>
+
+            {/* Price */}
+            <div style={{ fontFamily: fonts.sans, fontSize: 34, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 16 }}>
+              {p.price > 0 ? `${fmtPrice(p.price)}${p.listing_type === "rent" ? "pcm" : ""}` : "Price TBC"}
+            </div>
+
+            {/* Name + location */}
+            <div style={{ fontFamily: fonts.sans, fontSize: 14, color: "rgba(255,255,255,0.75)", lineHeight: 1.5, marginBottom: 4 }}>{p.name}</div>
+            {p.location && <div style={{ fontFamily: fonts.sans, fontSize: 13, color: "rgba(255,255,255,0.5)", marginBottom: 20 }}>{p.location}</div>}
+
+            {/* Type badge */}
+            {p.property_type && (
+              <div style={{ marginBottom: 24 }}>
+                <span style={{ border: "1.5px solid rgba(255,255,255,0.35)", borderRadius: 20, padding: "4px 14px", fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, color: "rgba(255,255,255,0.7)", textTransform: "capitalize" }}>
+                  {p.property_type}
+                </span>
+              </div>
+            )}
+
+            {/* Stats row */}
+            {darkStats.length > 0 && (
+              <div style={{ display: "flex", gap: 0, borderTop: "1px solid rgba(255,255,255,0.12)", borderBottom: "1px solid rgba(255,255,255,0.12)", marginBottom: 28, padding: "16px 0" }}>
+                {darkStats.map((st, i) => (
+                  <div key={i} title={st.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, borderRight: i < darkStats.length - 1 ? "1px solid rgba(255,255,255,0.12)" : "none" }}>
+                    {st.icon}
+                    <span style={{ fontSize: 13, fontFamily: fonts.sans, fontWeight: 600, color: "#fff" }}>{st.val}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: "auto" }}>
+              <button onClick={() => { onClose(); onEdit(p); }}
+                style={{ padding: "12px", borderRadius: 24, border: "none", background: "#fff", color: "#1a1a1a", fontFamily: fonts.sans, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                Edit Property
+              </button>
+              {p.website_link && (
+                <a href={p.website_link} target="_blank" rel="noreferrer"
+                  style={{ display: "block", padding: "12px", borderRadius: 24, border: "1.5px solid rgba(255,255,255,0.35)", background: "transparent", color: "#fff", fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, textDecoration: "none", textAlign: "center" }}>
+                  View Listing ↗
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom section: map + details */}
+        <div style={{ padding: mobile ? "24px 16px" : "32px 28px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 36 }}>
             {/* Left: map + distance */}
             <div>
               {p.location && (
                 <>
                   <div style={s.sectionHead}>Location</div>
-                  <div style={{ fontSize: 13, color: C.textMid, fontFamily: fonts.serif, marginBottom: 12 }}>{p.location}</div>
-                  <div style={{ marginBottom: 24, border: `1px solid ${C.borderLight}`, overflow: "hidden" }}>
-                    <iframe
-                      title="map"
-                      src={`https://maps.google.com/maps?q=${encodeURIComponent(p.location)}&output=embed&z=14&hl=en`}
-                      width="100%" height="200" style={{ border: 0, display: "block" }} loading="lazy"
-                    />
+                  <div style={{ fontSize: 13, color: C.textMid, fontFamily: fonts.sans, marginBottom: 12 }}>{p.location}</div>
+                  <div style={{ marginBottom: 24, borderRadius: 8, overflow: "hidden", border: `1px solid ${C.borderLight}` }}>
+                    <iframe title="map" src={`https://maps.google.com/maps?q=${encodeURIComponent(p.location)}&output=embed&z=14&hl=en`} width="100%" height="220" style={{ border: 0, display: "block" }} loading="lazy" />
                   </div>
                   <div style={s.sectionHead}>Distance to Work</div>
                   <DistanceSection location={p.location} workplaceAddress={workplaceAddress} propertyId={p.id} customValues={p.custom_values} />
@@ -796,11 +976,10 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
               )}
             </div>
 
-            {/* Right: details + custom fields + notes */}
+            {/* Right: details + custom + notes */}
             <div>
-              {/* Property details */}
               <div style={s.sectionHead}>Details</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 16px", marginBottom: 24 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginBottom: 28 }}>
                 {[
                   ["Price", p.price > 0 ? `${fmtPrice(p.price)}${p.listing_type === "rent" ? "/mo" : ""}` : "—"],
                   ["Type", p.property_type],
@@ -809,53 +988,162 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
                   p.size > 0 && ["Size", `${p.size} ${p.size_unit}`],
                   sizePerRoom && ["Per Bedroom", `${sizePerRoom} ${p.size_unit}`],
                 ].filter(Boolean).map(([k, v]) => (
-                  <div key={k}>
-                    <div style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 2 }}>{k}</div>
-                    <div style={{ fontSize: 14, fontFamily: fonts.serif, color: C.text }}>{v}</div>
+                  <div key={k} style={{ padding: "12px", background: "#f7f7f7", borderRadius: 8 }}>
+                    <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 4 }}>{k}</div>
+                    <div style={{ fontSize: 15, fontFamily: fonts.sans, fontWeight: 600, color: C.text, textTransform: "capitalize" }}>{v}</div>
                   </div>
                 ))}
               </div>
 
-              {/* Things I care about */}
-              {customFields.length > 0 && (
-                <>
-                  <div style={s.sectionHead}>Things I Care About</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px", marginBottom: 24 }}>
-                    {customFields.map(f => {
-                      const val = p.custom_values?.[f.id];
-                      if (val === undefined || val === null || val === "") return null;
-                      return (
-                        <div key={f.id}>
-                          <div style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 3 }}>{f.name}</div>
-                          {f.field_type === "checkbox" && <div style={{ fontSize: 14, color: val ? C.green : C.red }}>{val ? "✓ Yes" : "✗ No"}</div>}
-                          {f.field_type === "ranking" && (
-                            <div style={{ display: "flex", gap: 2 }}>
-                              {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                                <div key={n} style={{ width: 14, height: 14, background: n <= val ? C.text : C.borderLight }} />
-                              ))}
-                              <span style={{ fontSize: 12, fontFamily: fonts.serif, marginLeft: 6, color: C.text }}>{val}/10</span>
-                            </div>
-                          )}
-                          {(f.field_type === "number" || f.field_type === "text") && <div style={{ fontSize: 14, fontFamily: fonts.serif, color: C.text }}>{val}</div>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
+              {customFields.length > 0 && (() => {
+                const filled = customFields.filter(f => { const v = p.custom_values?.[f.id]; return v !== undefined && v !== null && v !== ""; });
+                if (!filled.length) return null;
+                return (
+                  <>
+                    <div style={s.sectionHead}>Things I Care About</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginBottom: 24 }}>
+                      {filled.map(f => {
+                        const val = p.custom_values[f.id];
+                        return (
+                          <div key={f.id}>
+                            <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 3 }}>{f.name}</div>
+                            {f.field_type === "checkbox" && <div style={{ fontSize: 14, color: val ? C.green : C.red }}>{val ? "Yes" : "No"}</div>}
+                            {f.field_type === "ranking" && (
+                              <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                                {[1,2,3,4,5,6,7,8,9,10].map(n => <div key={n} style={{ width: 12, height: 12, background: n <= val ? C.text : C.borderLight, borderRadius: 2 }} />)}
+                                <span style={{ fontSize: 12, fontFamily: fonts.sans, marginLeft: 6, color: C.text }}>{val}/10</span>
+                              </div>
+                            )}
+                            {(f.field_type === "number" || f.field_type === "text") && <div style={{ fontSize: 14, fontFamily: fonts.sans, color: C.text }}>{val}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
 
-              {/* Notes */}
               {p.notes && (
                 <>
                   <div style={s.sectionHead}>Notes</div>
-                  <p style={{ fontSize: 14, fontFamily: fonts.serif, color: C.textMid, lineHeight: 1.6, margin: 0, whiteSpace: "pre-wrap" }}>{p.notes}</p>
+                  <p style={{ fontSize: 14, fontFamily: fonts.sans, color: C.textMid, lineHeight: 1.6, margin: 0, whiteSpace: "pre-wrap" }}>{p.notes}</p>
                 </>
               )}
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
+  );
+}
+
+// ─── Property card (Moda Living inspired) ──────────────────────────────────────
+function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onDelete, mobile, userId, displayCurrency, rates, onMainPhotoChange }) {
+  const [detailOpen, setDetailOpen] = useState(false);
+  const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
+  const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
+    ? fmtCurrency(gbp, displayCurrency, rates)
+    : fmt(gbp);
+
+  useEffect(() => { injectCardStyles(); }, []);
+
+  const stats = [
+    p.bedrooms > 0 && { label: "Bedrooms", icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M3 7v11"/><path d="M21 7v11"/><path d="M3 18h18"/><path d="M3 11h18"/><path d="M3 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/><path d="M13 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/></svg>, val: p.bedrooms },
+    p.bathrooms > 0 && { label: "Bathrooms", icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M4 12h16a1 1 0 011 1v3a4 4 0 01-4 4H7a4 4 0 01-4-4v-3a1 1 0 011-1z"/><path d="M6 12V5a2 2 0 012-2h1"/></svg>, val: p.bathrooms },
+    p.size > 0 && { label: `Size (${p.size_unit})`, icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>, val: p.size },
+    sizePerRoom && { label: `Per Bedroom (${p.size_unit})`, icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>, val: sizePerRoom },
+  ].filter(Boolean);
+
+  return (
+    <>
+      <div
+        className="prop-card"
+        style={{ display: "flex", flexDirection: "column", background: C.card, borderRadius: 6, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", cursor: "pointer" }}
+        onClick={() => setDetailOpen(true)}
+      >
+        {/* Image area */}
+        <div className="prop-tile" style={{ position: "relative", width: "100%", paddingTop: "66%", background: "#f0f0f0", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={C.textFaint} strokeWidth="1"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          </div>
+          {p.photo_url && (
+            <img className="prop-img" src={p.photo_url} alt={p.name} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />
+          )}
+
+          {/* Status badge */}
+          <div style={{ position: "absolute", top: 12, right: 12 }}>
+            <span style={{ background: C.pill, color: C.pillText, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, padding: "5px 14px", borderRadius: 20 }}>
+              {p.listing_type === "rent" ? "To Rent" : "For Sale"}
+            </span>
+          </div>
+
+          {/* Arrow button with clip-path fill animation */}
+          <div style={{ position: "absolute", bottom: 14, right: 14, width: 40, height: 40, borderRadius: "50%", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", overflow: "hidden" }}>
+            <div className="prop-arrow-fill" />
+            <svg className="prop-arrow-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.text} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ position: "relative", zIndex: 1 }}>
+              <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+            </svg>
+          </div>
+        </div>
+
+        {/* Card body */}
+        <div style={{ padding: "18px 20px 0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+            <div style={{ fontFamily: fonts.sans, fontSize: mobile ? 22 : 26, fontWeight: 700, color: C.text, letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+              {p.price > 0 ? `${fmtPrice(p.price)}${p.listing_type === "rent" ? "pcm" : ""}` : "Price TBC"}
+            </div>
+            {p.property_type && (
+              <span style={{ border: `1.5px solid ${C.text}`, borderRadius: 20, padding: "4px 12px", fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, color: C.text, textTransform: "capitalize", whiteSpace: "nowrap", marginLeft: 12, flexShrink: 0 }}>
+                {p.property_type}
+              </span>
+            )}
+          </div>
+          <div style={{ fontFamily: fonts.sans, fontSize: 13, color: C.textMid, lineHeight: 1.4 }}>
+            {p.name}{p.location ? `, ${p.location}` : ""}
+          </div>
+        </div>
+
+        {/* Stats row with tooltips */}
+        {stats.length > 0 && (
+          <div style={{ display: "flex", borderTop: `1px solid ${C.borderLight}`, margin: "14px 0 0" }}>
+            {stats.map((st, i) => (
+              <div key={i} title={st.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "14px 8px", borderRight: i < stats.length - 1 ? `1px solid ${C.borderLight}` : "none" }}>
+                {st.icon}
+                <span style={{ fontSize: 13, fontFamily: fonts.sans, fontWeight: 600, color: C.text }}>{st.val}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Action buttons — stop propagation so card click doesn't also trigger */}
+        <div style={{ display: "flex", borderTop: `1px solid ${C.borderLight}` }} onClick={e => e.stopPropagation()}>
+          <button onClick={() => onEdit(p)} style={{ flex: 1, padding: "10px", border: "none", borderRight: `1px solid ${C.borderLight}`, background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.textMid }}>
+            Edit
+          </button>
+          <button onClick={() => setDetailOpen(true)} style={{ flex: 1, padding: "10px", border: "none", borderRight: `1px solid ${C.borderLight}`, background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.textMid }}>
+            Details
+          </button>
+          <button onClick={() => { if (confirm(`Delete "${p.name}"?`)) onDelete(p.id); }} style={{ flex: 1, padding: "10px", border: "none", background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.red }}>
+            Remove
+          </button>
+        </div>
+      </div>
+
+      {detailOpen && (
+        <PropertyDetailModal
+          property={p}
+          customFields={customFields}
+          workplaceAddress={workplaceAddress}
+          onEdit={onEdit}
+          onClose={() => setDetailOpen(false)}
+          mobile={mobile}
+          userId={userId}
+          displayCurrency={displayCurrency}
+          rates={rates}
+          onMainPhotoChange={onMainPhotoChange}
+        />
+      )}
+    </>
   );
 }
 
@@ -1201,11 +1489,12 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, workplaceAd
   );
 }
 
-// ─── Sort / filter bar ─────────────────────────────────────────────────────────
-function SortFilterBar({ customFields, sortBy, onSort, filters, onFilter, mobile }) {
+// ─── Sort / filter bar (Moda Living style) ──────────────────────────────────────
+function SortFilterBar({ customFields, sortBy, onSort, filters, onFilter, mobile, count }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const rankingFields = customFields.filter(f => f.field_type === "ranking");
   const numberFields = customFields.filter(f => f.field_type === "number");
+  const hasActiveFilters = Object.values(filters).some(v => v !== "" && v !== undefined);
 
   const sortOptions = [
     { value: "date_desc", label: "Newest first" },
@@ -1218,38 +1507,54 @@ function SortFilterBar({ customFields, sortBy, onSort, filters, onFilter, mobile
     ...rankingFields.map(f => ({ value: `rank_${f.id}_asc`, label: `${f.name} ↑` })),
   ];
 
-  const inputStyle = { border: `1.5px solid ${C.border}`, background: C.card, padding: "5px 8px", fontFamily: fonts.sans, fontSize: 12, color: C.text, outline: "none", width: 70 };
+  const inputStyle = { border: `1.5px solid ${C.border}`, borderRadius: 6, background: C.card, padding: "7px 10px", fontFamily: fonts.sans, fontSize: 12, color: C.text, outline: "none", width: 80 };
 
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <select value={sortBy} onChange={e => onSort(e.target.value)} style={{ border: `1.5px solid ${C.border}`, background: C.card, padding: "6px 10px", fontFamily: fonts.sans, fontSize: 11, color: C.text, outline: "none", cursor: "pointer" }}>
-          {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <button onClick={() => setFiltersOpen(!filtersOpen)} style={{ ...s.btn(filtersOpen), fontSize: 10, padding: "6px 12px" }}>
-          Filters {filtersOpen ? "▴" : "▾"}
-        </button>
-        {Object.values(filters).some(v => v !== "" && v !== undefined) && (
-          <button onClick={() => onFilter({})} style={{ fontSize: 10, background: "transparent", border: "none", color: C.accent, cursor: "pointer", fontFamily: fonts.sans, fontWeight: 600 }}>Clear filters</button>
-        )}
+    <div style={{ marginBottom: 28 }}>
+      {/* Count + sort + filter row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${C.border}`, paddingBottom: 16, marginBottom: filtersOpen ? 0 : 0 }}>
+        <span style={{ fontFamily: fonts.sans, fontSize: 15, fontWeight: 500, color: C.text }}>
+          {count} Propert{count === 1 ? "y" : "ies"}
+        </span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <select value={sortBy} onChange={e => onSort(e.target.value)} style={{ border: `1.5px solid ${C.border}`, borderRadius: 20, background: C.card, padding: "7px 14px", fontFamily: fonts.sans, fontSize: 12, color: C.text, outline: "none", cursor: "pointer", appearance: "auto" }}>
+            {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <button onClick={() => setFiltersOpen(!filtersOpen)} style={{
+            display: "flex", alignItems: "center", gap: 8,
+            border: `1.5px solid ${filtersOpen || hasActiveFilters ? C.text : C.border}`,
+            borderRadius: 20, background: filtersOpen ? C.text : "transparent",
+            color: filtersOpen ? "#fff" : C.text,
+            padding: "7px 18px", cursor: "pointer", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600,
+            transition: "all 0.15s",
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="4" y1="6" x2="20" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="10" y1="18" x2="14" y2="18"/>
+            </svg>
+            Filter
+          </button>
+          {hasActiveFilters && (
+            <button onClick={() => onFilter({})} style={{ fontSize: 11, background: "transparent", border: "none", color: C.text, cursor: "pointer", fontFamily: fonts.sans, fontWeight: 600, textDecoration: "underline" }}>Clear</button>
+          )}
+        </div>
       </div>
       {filtersOpen && (
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 10, padding: "12px 16px", background: C.card, border: `1px solid ${C.borderLight}` }}>
-          {[["Min beds", "minBeds"], ["Max beds", "maxBeds"], ["Max price £", "maxPrice"]].map(([label, key]) => (
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", padding: "16px 0", borderBottom: `1px solid ${C.border}` }}>
+          {[["Min beds", "minBeds"], ["Max beds", "maxBeds"], ["Max price", "maxPrice"]].map(([label, key]) => (
             <div key={key}>
-              <div style={{ fontSize: 9, fontFamily: fonts.sans, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textLight, marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.textMid, marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
               <input type="number" min={0} value={filters[key] || ""} onChange={e => onFilter({ ...filters, [key]: e.target.value })} style={inputStyle} />
             </div>
           ))}
           {numberFields.map(f => (
             <div key={f.id}>
-              <div style={{ fontSize: 9, fontFamily: fonts.sans, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textLight, marginBottom: 4 }}>Min {f.name}</div>
+              <div style={{ fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.textMid, marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.05em" }}>Min {f.name}</div>
               <input type="number" min={0} value={filters[`num_${f.id}`] || ""} onChange={e => onFilter({ ...filters, [`num_${f.id}`]: e.target.value })} style={inputStyle} />
             </div>
           ))}
           {rankingFields.map(f => (
             <div key={f.id}>
-              <div style={{ fontSize: 9, fontFamily: fonts.sans, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textLight, marginBottom: 4 }}>Min {f.name} score</div>
+              <div style={{ fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.textMid, marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.05em" }}>Min {f.name}</div>
               <input type="number" min={1} max={10} value={filters[`rank_${f.id}`] || ""} onChange={e => onFilter({ ...filters, [`rank_${f.id}`]: e.target.value })} style={inputStyle} />
             </div>
           ))}
@@ -1345,25 +1650,58 @@ export default function GaffTracker() {
 
   if (!user) {
     return (
-      <div style={{ textAlign: "center", padding: "80px 20px" }}>
-        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, marginBottom: 12 }}>Property Tracker</h2>
-        <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic" }}>Sign in to track properties.</p>
+      <div style={{ textAlign: "center", padding: "100px 20px" }}>
+        <h1 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, marginBottom: 16, fontSize: 48, WebkitTextStroke: "1.5px " + C.text, WebkitTextFillColor: "transparent", textTransform: "uppercase", letterSpacing: "0.04em" }}>Properties</h1>
+        <p style={{ fontFamily: fonts.sans, color: C.textMid, fontSize: 15 }}>Sign in to track properties.</p>
       </div>
     );
   }
 
+  const gridCols = mobile ? "1fr" : "repeat(3, 1fr)";
+
   return (
     <div>
-      {/* Title + add button */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, margin: "0 0 4px 0", fontSize: mobile ? 24 : 32 }}>Property Tracker</h2>
-          <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: 0 }}>Track and compare properties you're considering.</p>
-        </div>
-        <button onClick={() => { setEditingProperty(null); setDialogOpen(true); }} style={{ padding: "10px 20px", border: "none", background: C.text, color: C.bg, fontSize: 12, fontWeight: 700, fontFamily: fonts.sans, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap" }}>
-          + Add Property
+      {/* Hero title — Moda Living style outlined text */}
+      <div style={{ textAlign: "center", padding: mobile ? "32px 0 24px" : "48px 0 32px" }}>
+        <h1 style={{
+          fontFamily: fonts.serif, fontWeight: 400, margin: 0,
+          fontSize: mobile ? 42 : 72, lineHeight: 1,
+          WebkitTextStroke: mobile ? "1px " + C.text : "1.5px " + C.text,
+          WebkitTextFillColor: "transparent",
+          textTransform: "uppercase", letterSpacing: "0.04em",
+        }}>Properties</h1>
+      </div>
+
+      {/* Tabs — clean pill style */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 0, marginBottom: 32 }}>
+        {[{ key: "rent", label: "Renting" }, { key: "buy", label: "Buying" }].map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+            padding: "10px 32px", border: `1.5px solid ${C.text}`,
+            borderRadius: t.key === "rent" ? "24px 0 0 24px" : "0 24px 24px 0",
+            background: activeTab === t.key ? C.text : "transparent", cursor: "pointer",
+            color: activeTab === t.key ? "#fff" : C.text,
+            fontSize: 13, fontWeight: 600,
+            fontFamily: fonts.sans,
+            transition: "all 0.15s",
+            marginLeft: t.key === "buy" ? -1.5 : 0,
+          }}>{t.label}</button>
+        ))}
+        <button onClick={() => { setEditingProperty(null); setDialogOpen(true); }} style={{
+          marginLeft: 16, padding: "10px 24px", border: "none",
+          borderRadius: 24, background: C.text, color: "#fff",
+          fontSize: 12, fontWeight: 700, fontFamily: fonts.sans,
+          cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.04em",
+          whiteSpace: "nowrap",
+        }}>
+          + Add
         </button>
       </div>
+
+      {/* Divider */}
+      <div style={{ borderBottom: `1px solid ${C.border}`, marginBottom: 20 }} />
+
+      {/* Sort/filter bar */}
+      <SortFilterBar customFields={customFields} sortBy={sortBy} onSort={setSortBy} filters={filters} onFilter={setFilters} mobile={mobile} count={displayed.length} />
 
       {/* Settings */}
       <SettingsPanel
@@ -1375,59 +1713,51 @@ export default function GaffTracker() {
         mobile={mobile}
       />
 
-      {/* Tabs */}
-      <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: `1.5px solid ${C.border}` }}>
-        {[{ key: "rent", label: "Renting" }, { key: "buy", label: "Buying" }].map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
-            padding: "10px 24px", border: "none",
-            borderBottom: activeTab === t.key ? `3px solid ${C.accent}` : "3px solid transparent",
-            background: "transparent", cursor: "pointer",
-            color: activeTab === t.key ? C.text : C.textLight,
-            fontSize: 13, fontWeight: activeTab === t.key ? 600 : 400,
-            fontFamily: fonts.sans, marginBottom: -1.5,
-          }}>{t.label}</button>
-        ))}
-        <span style={{ marginLeft: "auto", fontSize: 11, fontFamily: fonts.sans, color: C.textLight, alignSelf: "center", paddingRight: 4 }}>
-          {displayed.length} propert{displayed.length === 1 ? "y" : "ies"}
-        </span>
-      </div>
-
-      {/* Sort/filter */}
-      <SortFilterBar customFields={customFields} sortBy={sortBy} onSort={setSortBy} filters={filters} onFilter={setFilters} mobile={mobile} />
-
-      {/* Property list */}
-      {loading && <div style={{ color: C.textLight, fontFamily: fonts.serif }}>Loading...</div>}
+      {/* Property grid */}
+      {loading && <div style={{ color: C.textLight, fontFamily: fonts.sans, textAlign: "center", padding: 40 }}>Loading...</div>}
 
       {!loading && displayed.length === 0 && (
-        <div style={{ padding: "48px 24px", border: `1.5px dashed ${C.border}`, textAlign: "center" }}>
-          <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: "0 0 16px" }}>
+        <div style={{ padding: "64px 24px", textAlign: "center" }}>
+          <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.2 }}>
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke={C.textLight} strokeWidth="1"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          </div>
+          <p style={{ fontFamily: fonts.sans, color: C.textMid, fontSize: 15, margin: "0 0 20px" }}>
             {properties.filter(p => p.listing_type === activeTab).length === 0
-              ? `No ${activeTab} properties yet. Click "+ Add Property" to get started.`
-              : "No properties match the current filters."}
+              ? "No properties yet"
+              : "No properties match the current filters"}
           </p>
+          {properties.filter(p => p.listing_type === activeTab).length === 0 && (
+            <button onClick={() => { setEditingProperty(null); setDialogOpen(true); }} style={{ padding: "12px 28px", border: "none", borderRadius: 24, background: C.text, color: "#fff", fontSize: 13, fontWeight: 600, fontFamily: fonts.sans, cursor: "pointer" }}>
+              + Add Property
+            </button>
+          )}
         </div>
       )}
 
-      {!loading && displayed.map(p => (
-        <PropertyCard
-          key={p.id}
-          property={p}
-          customFields={customFields}
-          workplaceAddress={workplaceAddress}
-          onEdit={prop => { setEditingProperty(prop); setDialogOpen(true); }}
-          onDelete={handleDelete}
-          mobile={mobile}
-          userId={user?.id}
-          displayCurrency={displayCurrency}
-          rates={rates}
-          onMainPhotoChange={(propertyId, url) => setProperties(prev => prev.map(prop => prop.id === propertyId ? { ...prop, photo_url: url } : prop))}
-        />
-      ))}
+      {!loading && displayed.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: gridCols, gap: mobile ? 16 : 24 }}>
+          {displayed.map(p => (
+            <PropertyCard
+              key={p.id}
+              property={p}
+              customFields={customFields}
+              workplaceAddress={workplaceAddress}
+              onEdit={prop => { setEditingProperty(prop); setDialogOpen(true); }}
+              onDelete={handleDelete}
+              mobile={mobile}
+              userId={user?.id}
+              displayCurrency={displayCurrency}
+              rates={rates}
+              onMainPhotoChange={(propertyId, url) => setProperties(prev => prev.map(prop => prop.id === propertyId ? { ...prop, photo_url: url } : prop))}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Footer */}
-      <div style={{ marginTop: 48, borderTop: `2px solid ${C.text}`, paddingTop: 16, display: "flex", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 10, color: C.textLight, letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: 600 }}>Personal Finance Suite</span>
-        <span style={{ fontSize: 10, color: C.textFaint, letterSpacing: "0.15em", textTransform: "uppercase" }}>Property Tracker</span>
+      <div style={{ marginTop: 64, paddingTop: 24, borderTop: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 11, color: C.textLight, fontFamily: fonts.sans, fontWeight: 500 }}>Personal Finance Suite</span>
+        <span style={{ fontSize: 11, color: C.textFaint, fontFamily: fonts.sans }}>Property Tracker</span>
       </div>
 
       {/* Dialog */}
