@@ -1,10 +1,11 @@
 // ── Design tokens ──
 export const C = {
-  bg: "#f7f5f0", card: "#fff", border: "#e8e4db", borderLight: "#f0ece4",
-  text: "#1a1a1a", textMid: "#777", textLight: "#aaa", textFaint: "#ccc",
-  accent: "#b8860b", accentLight: "rgba(184,134,11,0.08)",
+  bg: "#ffffff", card: "#fff", border: "#e5e5e5", borderLight: "#f0f0f0",
+  text: "#1a1a1a", textMid: "#666", textLight: "#999", textFaint: "#ccc",
+  accent: "#1a1a1a", accentLight: "rgba(26,26,26,0.06)",
   green: "#2a7d2a", greenBg: "rgba(42,125,42,0.06)", greenBorder: "rgba(42,125,42,0.15)",
   red: "#c44", redBg: "rgba(204,68,68,0.06)", redBorder: "rgba(204,68,68,0.15)",
+  pill: "#1a1a1a", pillText: "#fff",
 };
 export const fonts = { serif: "'Instrument Serif', serif", sans: "'Instrument Sans', sans-serif" };
 
