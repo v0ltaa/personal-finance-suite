@@ -59,6 +59,29 @@ import {
 
 const GMAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
+// ─── Inject hover-animation CSS once ─────────────────────────────────────────
+let _stylesInjected = false;
+function injectCardStyles() {
+  if (_stylesInjected) return;
+  _stylesInjected = true;
+  const el = document.createElement("style");
+  el.textContent = `
+    .prop-img { transition: transform 0.4s ease; }
+    .prop-tile:hover .prop-img { transform: scale(1.06); }
+    .prop-arrow-fill {
+      position: absolute; inset: 0; border-radius: 50%;
+      background: rgba(70,70,70,0.88);
+      clip-path: circle(0% at 50% 100%);
+      transition: clip-path 0.3s ease;
+      pointer-events: none;
+    }
+    .prop-tile:hover .prop-arrow-fill { clip-path: circle(150% at 50% 100%); }
+    .prop-tile:hover .prop-arrow-svg { stroke: #fff; }
+    .prop-arrow-svg { transition: stroke 0.3s ease; }
+  `;
+  document.head.appendChild(el);
+}
+
 // ─── Shared styles ────────────────────────────────────────────────────────────
 const s = {
   label: { fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.textLight, letterSpacing: "0.12em", textTransform: "uppercase", display: "block", marginBottom: 6 },
@@ -713,53 +736,230 @@ function DistanceSection({ location, workplaceAddress, propertyId, customValues 
   );
 }
 
-// ─── Property detail modal ─────────────────────────────────────────────────────
+// ─── Modal carousel (clean, cover-fit, Moda style nav) ────────────────────────
+function ModalCarousel({ propertyId, userId, onMainPhotoChange }) {
+  const [photos, setPhotos] = useState(null);
+  const [idx, setIdx] = useState(0);
+  const [showCrop, setShowCrop] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const starColor = "#D4A017";
+
+  useEffect(() => {
+    loadPropertyPhotos(propertyId).then(({ data }) => setPhotos(data || []));
+  }, [propertyId]);
+
+  useEffect(() => {
+    if (photos && idx >= photos.length && photos.length > 0) setIdx(photos.length - 1);
+  }, [photos, idx]);
+
+  const current = photos?.[idx] ?? null;
+
+  const _addPhotoRecord = async (url, note, isMain) => {
+    const { data: photo, error } = await savePropertyPhoto(propertyId, { url, note: note || null, is_main: isMain, sort_order: photos?.length ?? 0 });
+    if (error || !photo) return;
+    if (isMain) {
+      const cleared = (photos || []).map(p => ({ ...p, is_main: false }));
+      const next = [...cleared, { ...photo, is_main: true }];
+      setPhotos(next); setIdx(next.length - 1);
+      await setMainPhoto(propertyId, photo.id, url);
+      onMainPhotoChange?.(url);
+    } else {
+      setPhotos(prev => { const next = [...(prev || []), photo]; setIdx(next.length - 1); return next; });
+    }
+  };
+
+  const handleSavePhoto = async (file, note, isMain) => {
+    setUploading(true); setShowCrop(false);
+    const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const { url, error } = await uploadPropertyPhotoMulti(userId, propertyId, suffix, file);
+    if (!error && url) await _addPhotoRecord(url, note, isMain);
+    setUploading(false);
+  };
+
+  const handleSavePhotoUrl = async (url, note, isMain) => {
+    setUploading(true); setShowCrop(false);
+    await _addPhotoRecord(url, note, isMain);
+    setUploading(false);
+  };
+
+  const handleSetMain = async (photo) => {
+    await setMainPhoto(propertyId, photo.id, photo.url);
+    setPhotos(prev => (prev || []).map(p => ({ ...p, is_main: p.id === photo.id })));
+    onMainPhotoChange?.(photo.url);
+  };
+
+  const handleDelete = async (photo) => {
+    if (!confirm("Delete this photo?")) return;
+    await deletePropertyPhoto(photo.id);
+    const next = (photos || []).filter(p => p.id !== photo.id);
+    setPhotos(next);
+    if (photo.is_main && next.length > 0) {
+      await setMainPhoto(propertyId, next[0].id, next[0].url);
+      setPhotos(next.map((p, i) => ({ ...p, is_main: i === 0 })));
+      onMainPhotoChange?.(next[0].url);
+    } else if (photo.is_main) {
+      onMainPhotoChange?.(null);
+    }
+  };
+
+  if (photos === null) return <div style={{ height: 320, background: "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontFamily: fonts.sans, color: C.textLight, fontSize: 13 }}>Loading…</span></div>;
+
+  return (
+    <div>
+      {showCrop && <PhotoCropModal onClose={() => setShowCrop(false)} onSave={handleSavePhoto} onSaveUrl={handleSavePhotoUrl} />}
+
+      {/* Main image — cover fit, no black bars */}
+      <div style={{ position: "relative", width: "100%", paddingTop: "62%", background: "#f0f0f0", overflow: "hidden" }}>
+        {photos.length === 0 ? (
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke={C.textFaint} strokeWidth="1"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            <button onClick={() => setShowCrop(true)} style={{ padding: "8px 20px", border: `1.5px solid ${C.border}`, borderRadius: 20, background: "#fff", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, cursor: "pointer", color: C.textMid }}>
+              {uploading ? "Uploading…" : "+ Add Photo"}
+            </button>
+          </div>
+        ) : (
+          <>
+            {current && (
+              <img src={current.url} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }} onError={e => { e.target.style.opacity = "0.3"; }} />
+            )}
+            {/* Set main / delete overlay — top right */}
+            <div style={{ position: "absolute", top: 10, right: 10, display: "flex", gap: 6 }}>
+              {current && !current.is_main && (
+                <button onClick={() => handleSetMain(current)} title="Set as main photo"
+                  style={{ background: "rgba(0,0,0,0.5)", border: `1px solid ${starColor}`, color: starColor, fontSize: 15, cursor: "pointer", width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>☆</button>
+              )}
+              {current?.is_main && (
+                <span style={{ background: starColor, color: "#fff", fontSize: 10, fontFamily: fonts.sans, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>★ Main</span>
+              )}
+              {current && (
+                <button onClick={() => handleDelete(current)} title="Delete photo"
+                  style={{ background: "rgba(0,0,0,0.5)", border: "1px solid #ef4444", color: "#ef4444", fontSize: 16, cursor: "pointer", width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Counter + nav row */}
+      {photos.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0 0" }}>
+          <button onClick={() => setShowCrop(true)} disabled={uploading}
+            style={{ background: "transparent", border: "none", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: C.textLight, cursor: "pointer", padding: 0 }}>
+            {uploading ? "Uploading…" : "+ Add Photo"}
+          </button>
+          {photos.length > 1 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontFamily: fonts.sans, fontSize: 13, color: C.textMid }}>{idx + 1} / {photos.length}</span>
+              <button onClick={() => setIdx(i => (i - 1 + photos.length) % photos.length)}
+                style={{ width: 36, height: 36, borderRadius: "50%", border: `1.5px solid ${C.border}`, background: "#fff", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: C.text, fontWeight: 300 }}>‹</button>
+              <button onClick={() => setIdx(i => (i + 1) % photos.length)}
+                style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: C.text, cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 300 }}>›</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Property detail modal (Moda Living layout) ────────────────────────────────
 function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEdit, onClose, mobile, userId, displayCurrency, rates, onMainPhotoChange }) {
   const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
   const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
     ? fmtCurrency(gbp, displayCurrency, rates)
     : fmt(gbp);
 
-  // Prevent body scroll while modal open
   useEffect(() => {
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = ""; };
   }, []);
 
+  const darkStats = [
+    p.bedrooms > 0 && { label: "Beds", val: p.bedrooms, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5"><path d="M3 7v11"/><path d="M21 7v11"/><path d="M3 18h18"/><path d="M3 11h18"/><path d="M3 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/><path d="M13 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/></svg> },
+    p.bathrooms > 0 && { label: "Baths", val: p.bathrooms, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5"><path d="M4 12h16a1 1 0 011 1v3a4 4 0 01-4 4H7a4 4 0 01-4-4v-3a1 1 0 011-1z"/><path d="M6 12V5a2 2 0 012-2h1"/></svg> },
+    p.size > 0 && { label: p.size_unit || "sqft", val: p.size, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18"/><path d="M9 3v18"/></svg> },
+    sizePerRoom && { label: "per bed", val: sizePerRoom, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
+  ].filter(Boolean);
+
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1100, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: mobile ? "0" : "32px 16px", overflowY: "auto" }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1100, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: mobile ? "0" : "24px 16px", overflowY: "auto" }}
       onClick={onClose}
     >
       <div
-        style={{ background: C.card, width: "100%", maxWidth: 860, borderRadius: mobile ? 0 : 12, boxShadow: "0 24px 80px rgba(0,0,0,0.22)", position: "relative", marginBottom: mobile ? 0 : 32, minHeight: mobile ? "100dvh" : "auto" }}
+        style={{ background: C.card, width: "100%", maxWidth: 980, borderRadius: mobile ? 0 : 12, boxShadow: "0 32px 100px rgba(0,0,0,0.28)", position: "relative", marginBottom: mobile ? 0 : 24 }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Modal header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 28px", borderBottom: `1px solid ${C.borderLight}` }}>
-          <div>
-            <div style={{ fontFamily: fonts.sans, fontSize: 20, fontWeight: 700, color: C.text, marginBottom: 2 }}>{p.name}</div>
-            {p.location && <div style={{ fontFamily: fonts.sans, fontSize: 13, color: C.textMid }}>{p.location}</div>}
-          </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <button onClick={() => { onClose(); onEdit(p); }} style={{ padding: "8px 18px", border: `1.5px solid ${C.border}`, borderRadius: 20, background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: C.textMid }}>
-              Edit
-            </button>
-            <button onClick={onClose} style={{ width: 36, height: 36, border: `1.5px solid ${C.border}`, borderRadius: "50%", background: "transparent", cursor: "pointer", fontSize: 20, color: C.textLight, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>×</button>
-          </div>
-        </div>
+        {/* Close button */}
+        <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, zIndex: 10, width: 36, height: 36, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)", cursor: "pointer", fontSize: 20, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>×</button>
 
-        {/* Modal body */}
-        <div style={{ padding: mobile ? "20px 16px" : "28px" }}>
-          {/* Photos */}
-          <div style={{ marginBottom: 28 }}>
-            <PhotoCarousel
+        {/* Top section: carousel + dark summary */}
+        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "3fr 2fr" }}>
+          {/* Left: carousel */}
+          <div style={{ padding: mobile ? "0" : "0", overflow: "hidden", borderRadius: mobile ? "12px 12px 0 0" : "12px 0 0 0" }}>
+            <ModalCarousel
               propertyId={p.id}
               userId={userId}
               onMainPhotoChange={(url) => onMainPhotoChange?.(p.id, url)}
             />
+            {/* Nav row shown inside the carousel component */}
           </div>
 
+          {/* Right: dark summary box */}
+          <div style={{ background: "#1a1a1a", padding: mobile ? "24px 20px" : "32px 28px", display: "flex", flexDirection: "column", gap: 0, borderRadius: mobile ? 0 : "0 12px 0 0" }}>
+            {/* Status */}
+            <div style={{ fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+              {p.listing_type === "rent" ? "To Rent" : "For Sale"}
+            </div>
+
+            {/* Price */}
+            <div style={{ fontFamily: fonts.sans, fontSize: 34, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 16 }}>
+              {p.price > 0 ? `${fmtPrice(p.price)}${p.listing_type === "rent" ? "pcm" : ""}` : "Price TBC"}
+            </div>
+
+            {/* Name + location */}
+            <div style={{ fontFamily: fonts.sans, fontSize: 14, color: "rgba(255,255,255,0.75)", lineHeight: 1.5, marginBottom: 4 }}>{p.name}</div>
+            {p.location && <div style={{ fontFamily: fonts.sans, fontSize: 13, color: "rgba(255,255,255,0.5)", marginBottom: 20 }}>{p.location}</div>}
+
+            {/* Type badge */}
+            {p.property_type && (
+              <div style={{ marginBottom: 24 }}>
+                <span style={{ border: "1.5px solid rgba(255,255,255,0.35)", borderRadius: 20, padding: "4px 14px", fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, color: "rgba(255,255,255,0.7)", textTransform: "capitalize" }}>
+                  {p.property_type}
+                </span>
+              </div>
+            )}
+
+            {/* Stats row */}
+            {darkStats.length > 0 && (
+              <div style={{ display: "flex", gap: 0, borderTop: "1px solid rgba(255,255,255,0.12)", borderBottom: "1px solid rgba(255,255,255,0.12)", marginBottom: 28, padding: "16px 0" }}>
+                {darkStats.map((st, i) => (
+                  <div key={i} title={st.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, borderRight: i < darkStats.length - 1 ? "1px solid rgba(255,255,255,0.12)" : "none" }}>
+                    {st.icon}
+                    <span style={{ fontSize: 13, fontFamily: fonts.sans, fontWeight: 600, color: "#fff" }}>{st.val}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: "auto" }}>
+              <button onClick={() => { onClose(); onEdit(p); }}
+                style={{ padding: "12px", borderRadius: 24, border: "none", background: "#fff", color: "#1a1a1a", fontFamily: fonts.sans, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                Edit Property
+              </button>
+              {p.website_link && (
+                <a href={p.website_link} target="_blank" rel="noreferrer"
+                  style={{ display: "block", padding: "12px", borderRadius: 24, border: "1.5px solid rgba(255,255,255,0.35)", background: "transparent", color: "#fff", fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, textDecoration: "none", textAlign: "center" }}>
+                  View Listing ↗
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom section: map + details */}
+        <div style={{ padding: mobile ? "24px 16px" : "32px 28px" }}>
           <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 36 }}>
             {/* Left: map + distance */}
             <div>
@@ -768,11 +968,7 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
                   <div style={s.sectionHead}>Location</div>
                   <div style={{ fontSize: 13, color: C.textMid, fontFamily: fonts.sans, marginBottom: 12 }}>{p.location}</div>
                   <div style={{ marginBottom: 24, borderRadius: 8, overflow: "hidden", border: `1px solid ${C.borderLight}` }}>
-                    <iframe
-                      title="map"
-                      src={`https://maps.google.com/maps?q=${encodeURIComponent(p.location)}&output=embed&z=14&hl=en`}
-                      width="100%" height="220" style={{ border: 0, display: "block" }} loading="lazy"
-                    />
+                    <iframe title="map" src={`https://maps.google.com/maps?q=${encodeURIComponent(p.location)}&output=embed&z=14&hl=en`} width="100%" height="220" style={{ border: 0, display: "block" }} loading="lazy" />
                   </div>
                   <div style={s.sectionHead}>Distance to Work</div>
                   <DistanceSection location={p.location} workplaceAddress={workplaceAddress} propertyId={p.id} customValues={p.custom_values} />
@@ -780,10 +976,10 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
               )}
             </div>
 
-            {/* Right: details + custom fields + notes */}
+            {/* Right: details + custom + notes */}
             <div>
               <div style={s.sectionHead}>Details</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 16px", marginBottom: 28 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginBottom: 28 }}>
                 {[
                   ["Price", p.price > 0 ? `${fmtPrice(p.price)}${p.listing_type === "rent" ? "/mo" : ""}` : "—"],
                   ["Type", p.property_type],
@@ -792,54 +988,46 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
                   p.size > 0 && ["Size", `${p.size} ${p.size_unit}`],
                   sizePerRoom && ["Per Bedroom", `${sizePerRoom} ${p.size_unit}`],
                 ].filter(Boolean).map(([k, v]) => (
-                  <div key={k} style={{ padding: "12px", background: "#fafafa", borderRadius: 8 }}>
+                  <div key={k} style={{ padding: "12px", background: "#f7f7f7", borderRadius: 8 }}>
                     <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 4 }}>{k}</div>
                     <div style={{ fontSize: 15, fontFamily: fonts.sans, fontWeight: 600, color: C.text, textTransform: "capitalize" }}>{v}</div>
                   </div>
                 ))}
               </div>
 
-              {customFields.length > 0 && (
-                <>
-                  <div style={s.sectionHead}>Things I Care About</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px", marginBottom: 24 }}>
-                    {customFields.map(f => {
-                      const val = p.custom_values?.[f.id];
-                      if (val === undefined || val === null || val === "") return null;
-                      return (
-                        <div key={f.id}>
-                          <div style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 3 }}>{f.name}</div>
-                          {f.field_type === "checkbox" && <div style={{ fontSize: 14, color: val ? C.green : C.red }}>{val ? "Yes" : "No"}</div>}
-                          {f.field_type === "ranking" && (
-                            <div style={{ display: "flex", gap: 2 }}>
-                              {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                                <div key={n} style={{ width: 14, height: 14, background: n <= val ? C.text : C.borderLight, borderRadius: 2 }} />
-                              ))}
-                              <span style={{ fontSize: 12, fontFamily: fonts.sans, marginLeft: 6, color: C.text }}>{val}/10</span>
-                            </div>
-                          )}
-                          {(f.field_type === "number" || f.field_type === "text") && <div style={{ fontSize: 14, fontFamily: fonts.sans, color: C.text }}>{val}</div>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
+              {customFields.length > 0 && (() => {
+                const filled = customFields.filter(f => { const v = p.custom_values?.[f.id]; return v !== undefined && v !== null && v !== ""; });
+                if (!filled.length) return null;
+                return (
+                  <>
+                    <div style={s.sectionHead}>Things I Care About</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginBottom: 24 }}>
+                      {filled.map(f => {
+                        const val = p.custom_values[f.id];
+                        return (
+                          <div key={f.id}>
+                            <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 3 }}>{f.name}</div>
+                            {f.field_type === "checkbox" && <div style={{ fontSize: 14, color: val ? C.green : C.red }}>{val ? "Yes" : "No"}</div>}
+                            {f.field_type === "ranking" && (
+                              <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                                {[1,2,3,4,5,6,7,8,9,10].map(n => <div key={n} style={{ width: 12, height: 12, background: n <= val ? C.text : C.borderLight, borderRadius: 2 }} />)}
+                                <span style={{ fontSize: 12, fontFamily: fonts.sans, marginLeft: 6, color: C.text }}>{val}/10</span>
+                              </div>
+                            )}
+                            {(f.field_type === "number" || f.field_type === "text") && <div style={{ fontSize: 14, fontFamily: fonts.sans, color: C.text }}>{val}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
 
               {p.notes && (
                 <>
                   <div style={s.sectionHead}>Notes</div>
                   <p style={{ fontSize: 14, fontFamily: fonts.sans, color: C.textMid, lineHeight: 1.6, margin: 0, whiteSpace: "pre-wrap" }}>{p.notes}</p>
                 </>
-              )}
-
-              {p.website_link && (
-                <div style={{ marginTop: 24 }}>
-                  <a href={p.website_link} target="_blank" rel="noreferrer"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 20px", border: `1.5px solid ${C.text}`, borderRadius: 20, textDecoration: "none", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: C.text }}>
-                    <SiteIcon url={p.website_link} size={16} /> View Listing
-                  </a>
-                </div>
               )}
             </div>
           </div>
@@ -852,64 +1040,47 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
 // ─── Property card (Moda Living inspired) ──────────────────────────────────────
 function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onDelete, mobile, userId, displayCurrency, rates, onMainPhotoChange }) {
   const [detailOpen, setDetailOpen] = useState(false);
-  const [imgHovered, setImgHovered] = useState(false);
-  const [arrowHovered, setArrowHovered] = useState(false);
   const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
   const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
     ? fmtCurrency(gbp, displayCurrency, rates)
     : fmt(gbp);
 
+  useEffect(() => { injectCardStyles(); }, []);
+
   const stats = [
-    p.bedrooms > 0 && { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M3 7v11"/><path d="M21 7v11"/><path d="M3 18h18"/><path d="M3 11h18"/><path d="M3 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/><path d="M13 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/></svg>, val: p.bedrooms },
-    p.bathrooms > 0 && { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M4 12h16a1 1 0 011 1v3a4 4 0 01-4 4H7a4 4 0 01-4-4v-3a1 1 0 011-1z"/><path d="M6 12V5a2 2 0 012-2h1"/></svg>, val: p.bathrooms },
-    p.size > 0 && { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>, val: p.size },
-    sizePerRoom && { icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>, val: sizePerRoom },
+    p.bedrooms > 0 && { label: "Bedrooms", icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M3 7v11"/><path d="M21 7v11"/><path d="M3 18h18"/><path d="M3 11h18"/><path d="M3 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/><path d="M13 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/></svg>, val: p.bedrooms },
+    p.bathrooms > 0 && { label: "Bathrooms", icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M4 12h16a1 1 0 011 1v3a4 4 0 01-4 4H7a4 4 0 01-4-4v-3a1 1 0 011-1z"/><path d="M6 12V5a2 2 0 012-2h1"/></svg>, val: p.bathrooms },
+    p.size > 0 && { label: `Size (${p.size_unit})`, icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>, val: p.size },
+    sizePerRoom && { label: `Per Bedroom (${p.size_unit})`, icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.textMid} strokeWidth="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>, val: sizePerRoom },
   ].filter(Boolean);
 
   return (
     <>
-      <div style={{ display: "flex", flexDirection: "column", background: C.card, borderRadius: 6, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", transition: "box-shadow 0.2s" }}>
+      <div
+        className="prop-card"
+        style={{ display: "flex", flexDirection: "column", background: C.card, borderRadius: 6, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", cursor: "pointer" }}
+        onClick={() => setDetailOpen(true)}
+      >
         {/* Image area */}
-        <div
-          style={{ position: "relative", width: "100%", paddingTop: "66%", background: "#f0f0f0", cursor: "pointer", overflow: "hidden" }}
-          onClick={() => setDetailOpen(true)}
-          onMouseEnter={() => setImgHovered(true)}
-          onMouseLeave={() => setImgHovered(false)}
-        >
-          {/* Placeholder icon */}
+        <div className="prop-tile" style={{ position: "relative", width: "100%", paddingTop: "66%", background: "#f0f0f0", overflow: "hidden" }}>
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={C.textFaint} strokeWidth="1"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           </div>
           {p.photo_url && (
-            <img
-              src={p.photo_url} alt={p.name}
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.4s ease", transform: imgHovered ? "scale(1.06)" : "scale(1)" }}
-              onError={e => { e.target.style.display = "none"; }}
-            />
+            <img className="prop-img" src={p.photo_url} alt={p.name} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />
           )}
 
-          {/* Status badge — top right */}
+          {/* Status badge */}
           <div style={{ position: "absolute", top: 12, right: 12 }}>
             <span style={{ background: C.pill, color: C.pillText, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, padding: "5px 14px", borderRadius: 20 }}>
               {p.listing_type === "rent" ? "To Rent" : "For Sale"}
             </span>
           </div>
 
-          {/* Arrow button — bottom right, inverts on hover */}
-          <div
-            onMouseEnter={() => setArrowHovered(true)}
-            onMouseLeave={() => setArrowHovered(false)}
-            onClick={e => { e.stopPropagation(); setDetailOpen(true); }}
-            style={{
-              position: "absolute", bottom: 14, right: 14,
-              width: 40, height: 40, borderRadius: "50%",
-              background: arrowHovered ? "rgba(80,80,80,0.85)" : "#fff",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.15)", cursor: "pointer",
-              transition: "background 0.15s",
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={arrowHovered ? "#fff" : C.text} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transition: "stroke 0.15s" }}>
+          {/* Arrow button with clip-path fill animation */}
+          <div style={{ position: "absolute", bottom: 14, right: 14, width: 40, height: 40, borderRadius: "50%", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", overflow: "hidden" }}>
+            <div className="prop-arrow-fill" />
+            <svg className="prop-arrow-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.text} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ position: "relative", zIndex: 1 }}>
               <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
             </svg>
           </div>
@@ -932,11 +1103,11 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
           </div>
         </div>
 
-        {/* Stats row */}
+        {/* Stats row with tooltips */}
         {stats.length > 0 && (
           <div style={{ display: "flex", borderTop: `1px solid ${C.borderLight}`, margin: "14px 0 0" }}>
             {stats.map((st, i) => (
-              <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "14px 8px", borderRight: i < stats.length - 1 ? `1px solid ${C.borderLight}` : "none" }}>
+              <div key={i} title={st.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "14px 8px", borderRight: i < stats.length - 1 ? `1px solid ${C.borderLight}` : "none" }}>
                 {st.icon}
                 <span style={{ fontSize: 13, fontFamily: fonts.sans, fontWeight: 600, color: C.text }}>{st.val}</span>
               </div>
@@ -944,8 +1115,8 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
           </div>
         )}
 
-        {/* Action buttons */}
-        <div style={{ display: "flex", borderTop: `1px solid ${C.borderLight}` }}>
+        {/* Action buttons — stop propagation so card click doesn't also trigger */}
+        <div style={{ display: "flex", borderTop: `1px solid ${C.borderLight}` }} onClick={e => e.stopPropagation()}>
           <button onClick={() => onEdit(p)} style={{ flex: 1, padding: "10px", border: "none", borderRight: `1px solid ${C.borderLight}`, background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.textMid }}>
             Edit
           </button>
@@ -958,7 +1129,6 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
         </div>
       </div>
 
-      {/* Detail modal */}
       {detailOpen && (
         <PropertyDetailModal
           property={p}
