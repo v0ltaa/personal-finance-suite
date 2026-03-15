@@ -155,7 +155,7 @@ function CustomiseDialog({
 function SortFilterBar({ customFields, sortBy, onSort, filters, onFilter }) {
   const [open, setOpen] = useState(false);
   const rankingFields = customFields.filter(f => f.field_type === "ranking");
-  const numberFields  = customFields.filter(f => f.field_type === "number");
+  const numberFields  = customFields.filter(f => f.field_type === "number" || f.field_type === "cost");
 
   const sortOptions = [
     { value: "date_desc",  label: "Newest first" },
@@ -332,6 +332,27 @@ function CfCell({ field, property }) {
       </span>
     );
   }
+  if (field.field_type === "maybe") {
+    const colors = { yes: C.green, maybe: C.amber, no: C.red };
+    return val
+      ? <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 700, color: colors[val] || C.textMid, textTransform: "uppercase", letterSpacing: "0.04em" }}>{val}</span>
+      : <span style={{ color: C.textFaint }}>—</span>;
+  }
+  if (field.field_type === "distance") {
+    const hasVal = val && typeof val === "object" && val.n !== "" && val.n != null;
+    return (
+      <span style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600 }}>
+        {hasVal ? `${val.n} ${val.u || "mi"}` : "—"}
+      </span>
+    );
+  }
+  if (field.field_type === "cost") {
+    return (
+      <span style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600 }}>
+        {val !== undefined && val !== "" && val !== null ? `£${Number(val).toLocaleString("en-GB")}` : "—"}
+      </span>
+    );
+  }
   // text
   return (
     <span style={{
@@ -437,7 +458,7 @@ export default function PropertyComparison() {
     if (filters.maxBeds)  list = list.filter(p => p.bedrooms <= Number(filters.maxBeds));
     if (filters.maxPrice) list = list.filter(p => !p.price || p.price <= Number(filters.maxPrice));
     customFields.forEach(f => {
-      if (f.field_type === "number"  && filters[`num_${f.id}`])  list = list.filter(p => (p.custom_values?.[f.id]  || 0) >= Number(filters[`num_${f.id}`]));
+      if ((f.field_type === "number" || f.field_type === "cost")  && filters[`num_${f.id}`])  list = list.filter(p => (p.custom_values?.[f.id]  || 0) >= Number(filters[`num_${f.id}`]));
       if (f.field_type === "ranking" && filters[`rank_${f.id}`]) list = list.filter(p => (p.custom_values?.[f.id]  || 0) >= Number(filters[`rank_${f.id}`]));
     });
 
@@ -452,7 +473,7 @@ export default function PropertyComparison() {
   const handleColHeaderClick = (colKey, cfField) => {
     if (cfField) {
       const fieldType = cfField.field_type;
-      if (fieldType !== "ranking" && fieldType !== "number") return;
+      if (fieldType !== "ranking" && fieldType !== "number" && fieldType !== "cost") return;
       const prefix = fieldType === "ranking" ? "rank" : "cfnum";
       const descKey = `${prefix}_${cfField.id}_desc`;
       const ascKey  = `${prefix}_${cfField.id}_asc`;
@@ -479,31 +500,31 @@ export default function PropertyComparison() {
   };
 
   const isSortable = (colKey, cfField) => {
-    if (cfField) return cfField.field_type === "ranking" || cfField.field_type === "number";
+    if (cfField) return cfField.field_type === "ranking" || cfField.field_type === "number" || cfField.field_type === "cost";
     return !!COL_SORT_KEYS[colKey];
   };
 
   // Styles
   const thBase = {
-    padding: "10px 14px",
+    padding: "9px 16px",
     fontFamily: fonts.sans, fontSize: 9, fontWeight: 700,
-    letterSpacing: "0.12em", textTransform: "uppercase", color: C.textLight,
+    letterSpacing: "0.14em", textTransform: "uppercase", color: C.textLight,
     background: C.bg, borderBottom: `1.5px solid ${C.border}`,
     whiteSpace: "nowrap", textAlign: "left",
     position: "sticky", top: 0, zIndex: 2,
   };
   const tdBase = {
-    padding: "11px 14px",
+    padding: "12px 16px",
     borderBottom: `1px solid ${C.borderLight}`,
     verticalAlign: "middle",
   };
-  const nameThStyle = { ...thBase, position: "sticky", top: 0, left: 0, zIndex: 3, minWidth: 160, borderRight: `1.5px solid ${C.border}` };
-  const nameTdBase  = { ...tdBase, position: "sticky", left: 0, zIndex: 1, minWidth: 160, borderRight: `1.5px solid ${C.border}` };
+  const nameThStyle = { ...thBase, position: "sticky", top: 0, left: 0, zIndex: 3, minWidth: 180, borderRight: `1.5px solid ${C.border}` };
+  const nameTdBase  = { ...tdBase, position: "sticky", left: 0, zIndex: 1, minWidth: 180, borderRight: `1.5px solid ${C.border}` };
 
   if (!user) {
     return (
-      <div style={{ textAlign: "center", padding: "80px 20px" }}>
-        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, marginBottom: 12 }}>Property Comparison</h2>
+      <div style={{ padding: mobile ? "32px 16px" : "48px 32px", textAlign: "center", paddingTop: 100 }}>
+        <h1 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, fontSize: 48, WebkitTextStroke: "1.5px " + C.text, WebkitTextFillColor: "transparent", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 16 }}>Comparison</h1>
         <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic" }}>Sign in to compare properties.</p>
       </div>
     );
@@ -513,34 +534,40 @@ export default function PropertyComparison() {
   const hiddenPropCount = hiddenProps.size;
 
   return (
-    <div>
+    <div style={{ padding: mobile ? "32px 16px" : "48px 32px" }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, margin: "0 0 4px 0", fontSize: mobile ? 24 : 32 }}>
-            Property Comparison
-          </h2>
-          <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: 0 }}>
+          <h1 style={{
+            fontFamily: fonts.serif, fontWeight: 400, color: C.text, margin: "0 0 6px",
+            fontSize: mobile ? 32 : 48,
+            WebkitTextStroke: "1.5px " + C.text, WebkitTextFillColor: "transparent",
+            textTransform: "uppercase", letterSpacing: "0.04em",
+          }}>
+            Comparison
+          </h1>
+          <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: 0, fontSize: 14 }}>
             Side-by-side matrix of all your tracked properties.
           </p>
         </div>
         <button
           onClick={() => setShowDialog(true)}
           style={{
-            padding: "9px 18px", border: `1.5px solid ${C.border}`, background: "transparent",
-            color: C.textMid, fontSize: 11, fontWeight: 600, fontFamily: fonts.sans, cursor: "pointer",
-            textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap",
+            padding: "10px 20px", border: "none", borderRadius: 24,
+            background: C.text, color: "#fff",
+            fontSize: 11, fontWeight: 700, fontFamily: fonts.sans, cursor: "pointer",
+            textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap",
             display: "flex", alignItems: "center", gap: 8,
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
             <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
           </svg>
           Customise
           {(hiddenColCount > 0 || hiddenPropCount > 0) && (
             <span style={{
-              background: C.accent, color: "#fff", fontSize: 9, fontWeight: 700,
+              background: "#fff", color: C.text, fontSize: 9, fontWeight: 700,
               padding: "1px 6px", borderRadius: 8, letterSpacing: 0,
             }}>
               {hiddenColCount + hiddenPropCount}
@@ -549,8 +576,8 @@ export default function PropertyComparison() {
         </button>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: `1.5px solid ${C.border}` }}>
+      {/* Tabs + count */}
+      <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 20, borderBottom: `1.5px solid ${C.border}` }}>
         {[{ key: "rent", label: "Renting" }, { key: "buy", label: "Buying" }].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
             padding: "10px 24px", border: "none",
@@ -561,8 +588,8 @@ export default function PropertyComparison() {
             fontFamily: fonts.sans, marginBottom: -1.5,
           }}>{t.label}</button>
         ))}
-        <span style={{ marginLeft: "auto", fontSize: 11, fontFamily: fonts.sans, color: C.textLight, alignSelf: "center", paddingRight: 4 }}>
-          {displayed.length} / {tabProperties.length} propert{tabProperties.length === 1 ? "y" : "ies"}
+        <span style={{ marginLeft: "auto", fontSize: 10, fontFamily: fonts.sans, color: C.textLight, alignSelf: "center", paddingRight: 2, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>
+          {displayed.length} / {tabProperties.length}
         </span>
       </div>
 
@@ -654,7 +681,7 @@ export default function PropertyComparison() {
             </thead>
             <tbody>
               {displayed.map((p, i) => {
-                const rowBg = i % 2 === 0 ? C.card : "#faf8f4";
+                const rowBg = i % 2 === 0 ? C.card : C.accentLight;
                 return (
                   <tr key={p.id}>
                     {/* Sticky name cell */}
@@ -690,12 +717,6 @@ export default function PropertyComparison() {
           </table>
         </div>
       )}
-
-      {/* Footer */}
-      <div style={{ marginTop: 48, borderTop: `2px solid ${C.text}`, paddingTop: 16, display: "flex", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 10, color: C.textLight, letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: 600 }}>Personal Finance Suite</span>
-        <span style={{ fontSize: 10, color: C.textFaint, letterSpacing: "0.15em", textTransform: "uppercase" }}>Property Comparison</span>
-      </div>
 
       {/* Customise dialog */}
       {showDialog && (

@@ -602,6 +602,49 @@ function CustomFieldInput({ field, value, onChange }) {
         style={{ ...s.textInput, maxWidth: 140 }} />
     );
   }
+  if (field.field_type === "distance") {
+    const v = (typeof value === "object" && value !== null) ? value : { n: "", u: "mi" };
+    return (
+      <div style={{ display: "flex", alignItems: "stretch", gap: 0, maxWidth: 180 }}>
+        <input type="number" min={0} step={0.1} value={v.n}
+          onChange={e => onChange({ n: e.target.value === "" ? "" : Number(e.target.value), u: v.u })}
+          style={{ ...s.textInput, flex: 1, borderRight: "none" }} />
+        <select value={v.u} onChange={e => onChange({ ...v, u: e.target.value })}
+          style={{ border: `1.5px solid ${C.border}`, background: C.card, padding: "7px 8px", fontFamily: fonts.sans, fontSize: 12, color: C.text, outline: "none", cursor: "pointer" }}>
+          <option value="mi">mi</option>
+          <option value="km">km</option>
+        </select>
+      </div>
+    );
+  }
+  if (field.field_type === "cost") {
+    return (
+      <div style={{ display: "flex", alignItems: "stretch", maxWidth: 160 }}>
+        <span style={{ padding: "7px 10px", fontFamily: fonts.sans, fontSize: 13, color: C.textMid, border: `1.5px solid ${C.border}`, borderRight: "none", background: C.bg, lineHeight: "normal", display: "flex", alignItems: "center" }}>£</span>
+        <input type="number" min={0} step={1} value={value || ""}
+          onChange={e => onChange(e.target.value === "" ? "" : Number(e.target.value))}
+          style={{ ...s.textInput, flex: 1, minWidth: 0 }} />
+      </div>
+    );
+  }
+  if (field.field_type === "maybe") {
+    return (
+      <div style={{ display: "flex" }}>
+        {MAYBE_OPTS.map(({ v, label, color }, i) => {
+          const active = value === v;
+          return (
+            <button key={v} type="button" onClick={() => onChange(active ? null : v)} style={{
+              padding: "6px 14px", border: `1.5px solid ${active ? color : C.border}`,
+              marginLeft: i > 0 ? -1.5 : 0, background: active ? color : "transparent",
+              color: active ? "#fff" : C.textMid, fontSize: 11, fontWeight: 700,
+              fontFamily: fonts.sans, cursor: "pointer", textTransform: "uppercase",
+              letterSpacing: "0.04em", position: "relative", zIndex: active ? 1 : 0,
+            }}>{label}</button>
+          );
+        })}
+      </div>
+    );
+  }
   // text
   return (
     <input type="text" value={value || ""} onChange={e => onChange(e.target.value)}
@@ -862,6 +905,18 @@ function ModalCarousel({ propertyId, userId, onMainPhotoChange }) {
   );
 }
 
+// ─── Custom field helpers ─────────────────────────────────────────────────────
+const MAYBE_OPTS = [
+  { v: "yes", label: "Yes", color: C.green },
+  { v: "maybe", label: "Maybe", color: C.amber },
+  { v: "no", label: "No", color: C.red },
+];
+
+const isCustomFieldFilled = (field, value) => {
+  if (field.field_type === "distance") return value != null && typeof value === "object" && value.n !== "" && value.n != null;
+  return value !== undefined && value !== null && value !== "";
+};
+
 // ─── Property detail modal (Moda Living layout) ────────────────────────────────
 function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEdit, onClose, mobile, userId, displayCurrency, rates, onMainPhotoChange }) {
   const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
@@ -996,11 +1051,11 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
               </div>
 
               {customFields.length > 0 && (() => {
-                const filled = customFields.filter(f => { const v = p.custom_values?.[f.id]; return v !== undefined && v !== null && v !== ""; });
+                const filled = customFields.filter(f => isCustomFieldFilled(f, p.custom_values?.[f.id]));
                 if (!filled.length) return null;
                 return (
                   <>
-                    <div style={s.sectionHead}>Things I Care About</div>
+                    <div style={s.sectionHead}>What Matters</div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginBottom: 24 }}>
                       {filled.map(f => {
                         const val = p.custom_values[f.id];
@@ -1008,6 +1063,7 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
                           <div key={f.id}>
                             <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 3 }}>{f.name}</div>
                             {f.field_type === "checkbox" && <div style={{ fontSize: 14, color: val ? C.green : C.red }}>{val ? "Yes" : "No"}</div>}
+                            {f.field_type === "maybe" && <div style={{ fontSize: 14, fontWeight: 700, fontFamily: fonts.sans, color: val === "yes" ? C.green : val === "no" ? C.red : C.amber }}>{val === "yes" ? "Yes" : val === "no" ? "No" : "Maybe"}</div>}
                             {f.field_type === "ranking" && (
                               <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
                                 {[1,2,3,4,5,6,7,8,9,10].map(n => <div key={n} style={{ width: 12, height: 12, background: n <= val ? C.text : C.borderLight, borderRadius: 2 }} />)}
@@ -1015,6 +1071,8 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
                               </div>
                             )}
                             {(f.field_type === "number" || f.field_type === "text") && <div style={{ fontSize: 14, fontFamily: fonts.sans, color: C.text }}>{val}</div>}
+                            {f.field_type === "distance" && <div style={{ fontSize: 14, fontFamily: fonts.sans, color: C.text }}>{val.n} {val.u || "mi"}</div>}
+                            {f.field_type === "cost" && <div style={{ fontSize: 14, fontFamily: fonts.sans, color: C.text }}>£{Number(val).toLocaleString("en-GB")}</div>}
                           </div>
                         );
                       })}
@@ -1157,7 +1215,7 @@ const EMPTY_FORM = {
   _commute_distance: "", _commute_petrol: "", _commute_transport: "",
 };
 
-function PropertyDialog({ property, customFields, defaultListingType, onSave, onClose, mobile, userId, rates }) {
+function PropertyDialog({ property, customFields, defaultListingType, onSave, onClose, onOpenSettings, mobile, userId, rates }) {
   const existingCurrency = property?.custom_values?.__price_currency || "GBP";
   const existingPriceLocal = property?.custom_values?.__price_local ?? property?.price ?? "";
   const [form, setForm] = useState(property ? {
@@ -1370,10 +1428,16 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
             <textarea value={form.notes} onChange={e => set("notes", e.target.value)} style={s.textarea} placeholder="Anything worth noting..." />
           </div>
 
-          {/* Custom fields */}
-          {customFields.length > 0 && (
-            <div style={{ marginBottom: 24 }}>
-              <div style={s.sectionHead}>Things I Care About</div>
+          {/* What Matters */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={s.sectionHead}>What Matters</div>
+            {customFields.length === 0 ? (
+              <p style={{ fontSize: 13, fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: 0, lineHeight: 1.6 }}>
+                No criteria set up yet.{" "}
+                <button type="button" onClick={onOpenSettings} style={{ background: "none", border: "none", color: C.text, cursor: "pointer", fontFamily: fonts.serif, fontSize: 13, fontStyle: "italic", textDecoration: "underline", padding: 0 }}>Open Settings</button>
+                {" "}to add what you look for in a property, then come back here.
+              </p>
+            ) : (
               <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: "16px 24px" }}>
                 {customFields.map(f => (
                   <div key={f.id}>
@@ -1382,8 +1446,8 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Save error */}
           {errors._save && <div style={{ marginBottom: 12, padding: "10px 12px", background: "#fee2e2", color: "#b91c1c", fontFamily: fonts.sans, fontSize: 12 }}>{errors._save}</div>}
@@ -1402,8 +1466,17 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
 }
 
 // ─── Settings panel ────────────────────────────────────────────────────────────
-function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, workplaceAddress, onWorkplaceChange, mobile }) {
-  const [open, setOpen] = useState(false);
+const FIELD_TYPES = [
+  { value: "checkbox", label: "Yes / No" },
+  { value: "maybe", label: "Yes / Maybe / No" },
+  { value: "number", label: "Number" },
+  { value: "distance", label: "Distance (mi or km)" },
+  { value: "cost", label: "Cost (£)" },
+  { value: "text", label: "Text" },
+  { value: "ranking", label: "Ranking (1–10)" },
+];
+
+function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, workplaceAddress, onWorkplaceChange, mobile, open, onToggle }) {
   const [wpEdit, setWpEdit] = useState(workplaceAddress);
   const [wpSaving, setWpSaving] = useState(false);
   const [addingField, setAddingField] = useState(false);
@@ -1423,11 +1496,9 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, workplaceAd
     if (data) { onFieldAdded(data); setNewFieldName(""); setAddingField(false); }
   };
 
-  const FIELD_TYPES = [{ value: "checkbox", label: "Checkbox (Yes/No)" }, { value: "number", label: "Number" }, { value: "text", label: "Text" }, { value: "ranking", label: "Ranking (1–10)" }];
-
   return (
     <div style={{ marginBottom: 24, border: `1px solid ${C.border}`, background: C.card }}>
-      <div onClick={() => setOpen(!open)} style={{ padding: "12px 16px", cursor: "pointer", userSelect: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div onClick={onToggle} style={{ padding: "12px 16px", cursor: "pointer", userSelect: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", fontWeight: 700, color: C.textMid, fontFamily: fonts.sans }}>Settings</span>
         <span style={{ color: C.textFaint, fontSize: 13, transform: open ? "rotate(0)" : "rotate(-90deg)", transition: "transform 0.2s" }}>▾</span>
       </div>
@@ -1448,15 +1519,18 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, workplaceAd
             {!GMAPS_KEY && <div style={{ fontSize: 11, color: C.textMid, fontFamily: fonts.serif, fontStyle: "italic", marginTop: 8 }}>Add <code>VITE_GOOGLE_MAPS_API_KEY</code> to your env to auto-compute travel times. Without it, clicking a travel mode opens Google Maps directions.</div>}
           </div>
 
-          {/* Custom fields */}
+          {/* What Matters */}
           <div>
             <div style={{ ...s.sectionHead, display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "none", paddingBottom: 0, marginBottom: 0 }}>
-              <span>Things I Care About</span>
+              <span>What Matters</span>
               <button onClick={() => setAddingField(!addingField)} style={{ fontSize: 10, background: "transparent", border: `1px solid ${C.border}`, padding: "3px 10px", cursor: "pointer", fontFamily: fonts.sans, fontWeight: 700, color: C.textMid }}>
                 {addingField ? "Cancel" : "+ Add"}
               </button>
             </div>
-            <div style={{ borderBottom: `1px solid ${C.border}`, marginBottom: 14, marginTop: 8 }} />
+            <div style={{ borderBottom: `1px solid ${C.border}`, marginBottom: 10, marginTop: 8 }} />
+            <p style={{ fontSize: 12, fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: "0 0 14px", lineHeight: 1.6 }}>
+              Define what you look for in a property — e.g. "Has parking", "Walk to tube (mi)", or "Monthly service charge". Each field appears on every property so you can score or note it consistently.
+            </p>
 
             {addingField && (
               <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: mobile ? "wrap" : "nowrap" }}>
@@ -1493,7 +1567,7 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, workplaceAd
 function SortFilterBar({ customFields, sortBy, onSort, filters, onFilter, mobile, count }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const rankingFields = customFields.filter(f => f.field_type === "ranking");
-  const numberFields = customFields.filter(f => f.field_type === "number");
+  const numberFields = customFields.filter(f => f.field_type === "number" || f.field_type === "cost");
   const hasActiveFilters = Object.values(filters).some(v => v !== "" && v !== undefined);
 
   const sortOptions = [
@@ -1575,6 +1649,7 @@ export default function GaffTracker() {
   const [activeTab, setActiveTab] = useState("rent"); // "rent" | "buy"
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [sortBy, setSortBy] = useState("date_desc");
   const [filters, setFilters] = useState({});
   const [workplaceAddress, setWorkplaceAddress] = useState(getWorkplaceAddress(user));
@@ -1627,7 +1702,7 @@ export default function GaffTracker() {
     if (filters.maxBeds) list = list.filter(p => p.bedrooms <= Number(filters.maxBeds));
     if (filters.maxPrice) list = list.filter(p => !p.price || p.price <= Number(filters.maxPrice));
     customFields.forEach(f => {
-      if (f.field_type === "number" && filters[`num_${f.id}`]) list = list.filter(p => (p.custom_values?.[f.id] || 0) >= Number(filters[`num_${f.id}`]));
+      if ((f.field_type === "number" || f.field_type === "cost") && filters[`num_${f.id}`]) list = list.filter(p => (p.custom_values?.[f.id] || 0) >= Number(filters[`num_${f.id}`]));
       if (f.field_type === "ranking" && filters[`rank_${f.id}`]) list = list.filter(p => (p.custom_values?.[f.id] || 0) >= Number(filters[`rank_${f.id}`]));
     });
 
@@ -1695,6 +1770,18 @@ export default function GaffTracker() {
         }}>
           + Add
         </button>
+        <button onClick={() => setSettingsOpen(v => !v)} title="Settings" style={{
+          marginLeft: 8, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "center",
+          border: `1.5px solid ${settingsOpen ? C.text : C.border}`,
+          borderRadius: 24, background: settingsOpen ? C.text : "transparent",
+          color: settingsOpen ? "#fff" : C.text,
+          cursor: "pointer", transition: "all 0.15s",
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
       </div>
 
       {/* Divider */}
@@ -1711,6 +1798,8 @@ export default function GaffTracker() {
         workplaceAddress={workplaceAddress}
         onWorkplaceChange={setWorkplaceAddress}
         mobile={mobile}
+        open={settingsOpen}
+        onToggle={() => setSettingsOpen(v => !v)}
       />
 
       {/* Property grid */}
@@ -1770,6 +1859,7 @@ export default function GaffTracker() {
           rates={rates}
           onSave={() => { setDialogOpen(false); refresh(); }}
           onClose={() => setDialogOpen(false)}
+          onOpenSettings={() => { setDialogOpen(false); setSettingsOpen(true); }}
           mobile={mobile}
         />
       )}

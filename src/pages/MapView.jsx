@@ -233,7 +233,7 @@ function LandmarksPanel({ landmarks, onSave, workplaceAddress }) {
 function MapControls({ customFields, sortBy, onSort, filters, onFilter, activeTab, onActiveTab, total, geocoding }) {
   const [open, setOpen] = useState(false);
   const rankingFields = customFields.filter(f => f.field_type === "ranking");
-  const numberFields = customFields.filter(f => f.field_type === "number");
+  const numberFields = customFields.filter(f => f.field_type === "number" || f.field_type === "cost");
   const sortOptions = [
     { value: "date_desc", label: "Newest first" },
     { value: "date_asc", label: "Oldest first" },
