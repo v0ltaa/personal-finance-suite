@@ -5,6 +5,7 @@ export const C = {
   accent: "#1a1a1a", accentLight: "rgba(26,26,26,0.06)",
   green: "#2a7d2a", greenBg: "rgba(42,125,42,0.06)", greenBorder: "rgba(42,125,42,0.15)",
   red: "#c44", redBg: "rgba(204,68,68,0.06)", redBorder: "rgba(204,68,68,0.15)",
+  amber: "#c07d00",
   pill: "#1a1a1a", pillText: "#fff",
 };
 export const fonts = { serif: "'Instrument Serif', serif", sans: "'Instrument Sans', sans-serif" };

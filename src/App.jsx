@@ -8,12 +8,12 @@ import AuthModal from "./components/AuthModal";
 import ScenarioManager from "./components/ScenarioManager";
 
 const modules = [
-  { key: "gaffTracker", label: "Property Tracker", path: "/gaff" },
-  { key: "buyVsRent", label: "Buy Scenario", path: "/" },
-  { key: "sandbox", label: "Rent vs Buy", path: "/sandbox" },
+  { key: "gaffTracker", label: "Property Tracker",         path: "/gaff",    group: "property" },
+  { key: "comparison",  label: "Property Comparison",      path: "/compare", group: "property" },
+  { key: "buyVsRent",   label: "Buy Scenario",             path: "/" },
+  { key: "sandbox",     label: "Rent vs Buy",              path: "/sandbox" },
   { key: "financeTracker", label: "Personal Finance Tracker", path: "/finance" },
-  { key: "comparison", label: "Property Comparison", path: "/compare" },
-  { key: "mapView", label: "Map View", path: "/map" },
+  { key: "mapView",     label: "Map View",                 path: "/map" },
 ];
 
 export default function App() {
@@ -128,12 +128,14 @@ export default function App() {
         {modules.map((m) => {
           const isActive = m.path === currentPath || (m.path === "/" && currentPath === "");
           const isDisabled = m.path === null;
+          const isPropertyGroup = m.group === "property";
           return (
             <button key={m.key} onClick={() => !isDisabled && navigate(m.path)} style={{
               padding: mobile ? "14px 16px" : "14px 24px",
               border: "none",
               borderBottom: isActive ? `3px solid ${C.accent}` : "3px solid transparent",
-              background: "transparent",
+              borderTop: isPropertyGroup ? `2px solid ${C.border}` : "2px solid transparent",
+              background: isPropertyGroup ? C.accentLight : "transparent",
               cursor: isDisabled ? "default" : "pointer",
               color: isActive ? C.text : C.textLight,
               fontSize: mobile ? 12 : 14,
@@ -150,7 +152,7 @@ export default function App() {
       </div>
 
       {/* Page Content */}
-      {currentPath === "/map" ? (
+      {(currentPath === "/map" || currentPath === "/compare") ? (
         <Outlet />
       ) : (
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: mobile ? "32px 16px" : "48px 32px" }}>
