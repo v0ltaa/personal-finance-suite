@@ -192,6 +192,11 @@ export async function deleteCustomField(id) {
   return supabase.from("custom_fields").delete().eq("id", id);
 }
 
+export async function updateCustomField(id, name) {
+  if (!supabase) return { error: { message: "Supabase not configured" } };
+  return supabase.from("custom_fields").update({ name }).eq("id", id).select().single();
+}
+
 // ── Gaff Tracker: Workplace address (stored in user metadata) ──
 
 export async function saveWorkplaceAddress(address) {

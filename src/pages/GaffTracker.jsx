@@ -51,7 +51,7 @@ import { useIsMobile, useAuth } from "../lib/hooks";
 import { CURRENCIES, SUPPORTED_CURRENCIES, currencySymbol, getDisplayCurrency, fetchRates, toGBP, fmtCurrency } from "../lib/currency";
 import {
   loadProperties, saveProperty, updateProperty, deleteProperty,
-  loadCustomFields, saveCustomField, deleteCustomField,
+  loadCustomFields, saveCustomField, deleteCustomField, updateCustomField,
   saveWorkplaceAddress, getWorkplaceAddress,
   loadPropertyPhotos, savePropertyPhoto, updatePropertyPhoto, deletePropertyPhoto,
   uploadPropertyPhotoMulti, setMainPhoto,
@@ -918,7 +918,7 @@ const isCustomFieldFilled = (field, value) => {
 };
 
 // ─── Property detail modal (Moda Living layout) ────────────────────────────────
-function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEdit, onClose, mobile, userId, displayCurrency, rates, onMainPhotoChange }) {
+function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEdit, onClose, mobile, userId, displayCurrency, rates, onMainPhotoChange, onMarkSold }) {
   const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
   const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
     ? fmtCurrency(gbp, displayCurrency, rates)
@@ -997,6 +997,19 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
               </div>
             )}
 
+            {/* Sold status indicator */}
+            {p.custom_values?.__sold_at && (
+              <div style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)", padding: "12px 16px", marginBottom: 4 }}>
+                <div style={{ fontSize: 10, fontFamily: fonts.sans, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>✓ Sold</div>
+                <div style={{ fontSize: 13, fontFamily: fonts.sans, color: "rgba(255,255,255,0.8)" }}>
+                  {new Date(p.custom_values.__sold_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                </div>
+                <div style={{ fontSize: 11, fontFamily: fonts.sans, color: "rgba(255,255,255,0.45)", marginTop: 3 }}>
+                  {Math.max(0, Math.round((new Date(p.custom_values.__sold_at) - new Date(p.created_at)) / (1000 * 60 * 60 * 24)))} days after you started tracking
+                </div>
+              </div>
+            )}
+
             {/* Buttons */}
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: "auto" }}>
               <button onClick={() => { onClose(); onEdit(p); }}
@@ -1008,6 +1021,19 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
                   style={{ display: "block", padding: "12px", borderRadius: 24, border: "1.5px solid rgba(255,255,255,0.35)", background: "transparent", color: "#fff", fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, textDecoration: "none", textAlign: "center" }}>
                   View Listing ↗
                 </a>
+              )}
+              {onMarkSold && (
+                p.custom_values?.__sold_at ? (
+                  <button onClick={() => onMarkSold(p, null)}
+                    style={{ padding: "12px", borderRadius: 24, border: "1.5px solid rgba(255,255,255,0.2)", background: "transparent", color: "rgba(255,255,255,0.45)", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    Unmark as Sold
+                  </button>
+                ) : (
+                  <button onClick={() => onMarkSold(p, new Date().toISOString())}
+                    style={{ padding: "12px", borderRadius: 24, border: "1.5px solid rgba(255,165,0,0.6)", background: "transparent", color: "#FFA500", fontFamily: fonts.sans, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    Mark as Sold
+                  </button>
+                )
               )}
             </div>
           </div>
@@ -1096,7 +1122,7 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
 }
 
 // ─── Property card (Moda Living inspired) ──────────────────────────────────────
-function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onDelete, mobile, userId, displayCurrency, rates, onMainPhotoChange }) {
+function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onDelete, mobile, userId, displayCurrency, rates, onMainPhotoChange, onMarkSold }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
   const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
@@ -1129,7 +1155,12 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
           )}
 
           {/* Status badge */}
-          <div style={{ position: "absolute", top: 12, right: 12 }}>
+          <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 6, alignItems: "center" }}>
+            {p.custom_values?.__sold_at && (
+              <span style={{ background: C.green, color: "#fff", fontSize: 11, fontFamily: fonts.sans, fontWeight: 700, padding: "5px 14px", borderRadius: 20 }}>
+                SOLD
+              </span>
+            )}
             <span style={{ background: C.pill, color: C.pillText, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, padding: "5px 14px", borderRadius: 20 }}>
               {p.listing_type === "rent" ? "To Rent" : "For Sale"}
             </span>
@@ -1199,6 +1230,7 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
           displayCurrency={displayCurrency}
           rates={rates}
           onMainPhotoChange={onMainPhotoChange}
+          onMarkSold={onMarkSold}
         />
       )}
     </>
@@ -1465,6 +1497,156 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
   );
 }
 
+// ─── Sold Insights Panel ──────────────────────────────────────────────────────
+function SoldInsightsPanel({ soldProperties, customFields }) {
+  const withTiming = useMemo(() =>
+    soldProperties.map(p => {
+      const soldAt = p.custom_values?.__sold_at;
+      if (!soldAt || !p.created_at) return null;
+      const days = Math.round((new Date(soldAt) - new Date(p.created_at)) / (1000 * 60 * 60 * 24));
+      return { ...p, daysToSell: Math.max(0, days) };
+    }).filter(Boolean),
+  [soldProperties]);
+
+  if (withTiming.length < 2) {
+    return (
+      <div style={{ padding: "24px 28px", border: `1px solid ${C.border}`, background: C.card, marginTop: 32 }}>
+        <div style={s.sectionHead}>Sale Insights</div>
+        <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", fontSize: 13, margin: 0 }}>
+          {withTiming.length === 0
+            ? "Mark properties as sold to start building insights about what makes them sell fast."
+            : "Need at least 2 sold properties to spot patterns."}
+        </p>
+      </div>
+    );
+  }
+
+  const avgDays = withTiming.reduce((s, p) => s + p.daysToSell, 0) / withTiming.length;
+  const minDays = Math.min(...withTiming.map(p => p.daysToSell));
+  const maxDays = Math.max(...withTiming.map(p => p.daysToSell));
+
+  const fieldInsights = customFields.map(f => {
+    const relevant = withTiming.filter(p => {
+      const v = p.custom_values?.[f.id];
+      return v !== undefined && v !== null && v !== "";
+    });
+    if (relevant.length < 2) return null;
+
+    if (f.field_type === "checkbox") {
+      const yes = relevant.filter(p => p.custom_values[f.id]);
+      const no = relevant.filter(p => !p.custom_values[f.id]);
+      if (yes.length === 0 || no.length === 0) return null;
+      const avgYes = yes.reduce((s, p) => s + p.daysToSell, 0) / yes.length;
+      const avgNo = no.reduce((s, p) => s + p.daysToSell, 0) / no.length;
+      return { field: f, groups: [{ label: "Yes", avg: avgYes, count: yes.length }, { label: "No", avg: avgNo, count: no.length }], diff: Math.abs(avgYes - avgNo), fasterLabel: avgYes < avgNo ? "Yes" : "No" };
+    }
+    if (f.field_type === "maybe") {
+      const groups = ["yes", "maybe", "no"].map(v => {
+        const items = relevant.filter(p => p.custom_values[f.id] === v);
+        if (items.length === 0) return null;
+        return { label: v === "yes" ? "Yes" : v === "no" ? "No" : "Maybe", avg: items.reduce((s, p) => s + p.daysToSell, 0) / items.length, count: items.length };
+      }).filter(Boolean);
+      if (groups.length < 2) return null;
+      const diffs = [];
+      for (let i = 0; i < groups.length; i++) for (let j = i + 1; j < groups.length; j++) diffs.push(Math.abs(groups[i].avg - groups[j].avg));
+      const maxDiff = Math.max(...diffs);
+      const fastest = groups.reduce((a, b) => a.avg < b.avg ? a : b);
+      return { field: f, groups, diff: maxDiff, fasterLabel: fastest.label };
+    }
+    if (f.field_type === "ranking") {
+      const high = relevant.filter(p => (p.custom_values[f.id] || 0) > 5);
+      const low = relevant.filter(p => (p.custom_values[f.id] || 0) <= 5);
+      if (high.length === 0 || low.length === 0) return null;
+      const avgHigh = high.reduce((s, p) => s + p.daysToSell, 0) / high.length;
+      const avgLow = low.reduce((s, p) => s + p.daysToSell, 0) / low.length;
+      return { field: f, groups: [{ label: "Rated 6–10", avg: avgHigh, count: high.length }, { label: "Rated 1–5", avg: avgLow, count: low.length }], diff: Math.abs(avgHigh - avgLow), fasterLabel: avgHigh < avgLow ? "Rated 6–10" : "Rated 1–5" };
+    }
+    return null;
+  }).filter(Boolean).sort((a, b) => b.diff - a.diff);
+
+  const maxBarAvg = fieldInsights.length > 0 ? Math.max(...fieldInsights.flatMap(i => i.groups.map(g => g.avg))) : 1;
+  const actFast = fieldInsights.filter(i => i.diff > avgDays * 0.15).map(i => ({ name: i.field.name, value: i.fasterLabel }));
+
+  return (
+    <div style={{ marginTop: 32, border: `1px solid ${C.border}`, background: C.card, padding: "24px 28px" }}>
+      <div style={s.sectionHead}>Sale Insights</div>
+
+      {/* Summary stats */}
+      <div style={{ display: "flex", gap: 16, marginBottom: 28, flexWrap: "wrap" }}>
+        {[
+          { label: "Properties Sold", val: withTiming.length, color: C.text },
+          { label: "Avg Days to Sell", val: Math.round(avgDays), color: C.text },
+          { label: "Fastest", val: `${minDays}d`, color: C.green },
+          { label: "Slowest", val: `${maxDays}d`, color: C.red },
+        ].map(({ label, val, color }) => (
+          <div key={label} style={{ background: "#f7f7f7", padding: "14px 20px", minWidth: 90 }}>
+            <div style={{ fontSize: 10, color: C.textLight, fontFamily: fonts.sans, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{label}</div>
+            <div style={{ fontSize: 24, fontFamily: fonts.sans, fontWeight: 700, color }}>{val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Field correlation bars */}
+      {fieldInsights.length > 0 ? (
+        <>
+          <div style={s.sectionHead}>What Matters · Impact on Sale Speed</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 22, marginBottom: 28 }}>
+            {fieldInsights.map(insight => {
+              const fastest = Math.min(...insight.groups.map(g => g.avg));
+              return (
+                <div key={insight.field.id}>
+                  <div style={{ fontSize: 12, fontFamily: fonts.sans, fontWeight: 700, color: C.text, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>{insight.field.name}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {insight.groups.map(g => {
+                      const w = maxBarAvg > 0 ? (g.avg / maxBarAvg) * 100 : 0;
+                      const isFastest = g.avg === fastest;
+                      return (
+                        <div key={g.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ width: 72, fontSize: 11, fontFamily: fonts.sans, color: C.textMid, textAlign: "right", flexShrink: 0 }}>{g.label}</div>
+                          <div style={{ flex: 1, height: 18, background: "#f0f0f0", borderRadius: 3, overflow: "hidden" }}>
+                            <div style={{ width: `${w}%`, height: "100%", background: isFastest ? C.green : "#aaa", borderRadius: 3 }} />
+                          </div>
+                          <div style={{ width: 80, fontSize: 11, fontFamily: fonts.sans, color: isFastest ? C.green : C.textMid, fontWeight: isFastest ? 700 : 400, flexShrink: 0 }}>
+                            {Math.round(g.avg)}d avg <span style={{ fontSize: 9, color: C.textFaint }}>({g.count})</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {insight.diff >= 1 && (
+                    <div style={{ fontSize: 11, fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", marginTop: 5 }}>
+                      "{insight.fasterLabel}" properties sold ~{Math.round(insight.diff)} days faster on average
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", fontSize: 13, marginBottom: 24 }}>
+          Fill in "What Matters" fields on your properties to see which criteria correlate with faster sales.
+        </p>
+      )}
+
+      {/* Act fast callout */}
+      {actFast.length > 0 && (
+        <div style={{ background: "#FFFBEB", border: "1.5px solid #F59E0B", padding: "16px 20px" }}>
+          <div style={{ fontSize: 11, fontFamily: fonts.sans, fontWeight: 700, color: "#B45309", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>⚡ Act Fast When You See</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+            {actFast.map((c, i) => (
+              <span key={i} style={{ background: "#FEF3C7", border: "1px solid #F59E0B", padding: "4px 14px", fontSize: 12, fontFamily: fonts.sans, color: "#92400E", fontWeight: 600 }}>{c.name}: {c.value}</span>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, fontFamily: fonts.serif, color: "#92400E", lineHeight: 1.55 }}>
+            Based on your sold history, listings matching these criteria tend to sell significantly faster than average — move quickly when you spot them.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Settings panel ────────────────────────────────────────────────────────────
 const FIELD_TYPES = [
   { value: "checkbox", label: "Yes / No" },
@@ -1476,12 +1658,22 @@ const FIELD_TYPES = [
   { value: "ranking", label: "Ranking (1–10)" },
 ];
 
-function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, workplaceAddress, onWorkplaceChange, mobile, open, onToggle }) {
+function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpdated, workplaceAddress, onWorkplaceChange, mobile, open, onToggle }) {
   const [wpEdit, setWpEdit] = useState(workplaceAddress);
   const [wpSaving, setWpSaving] = useState(false);
   const [addingField, setAddingField] = useState(false);
   const [newFieldName, setNewFieldName] = useState("");
   const [newFieldType, setNewFieldType] = useState("checkbox");
+  const [editingFieldId, setEditingFieldId] = useState(null);
+  const [editingFieldName, setEditingFieldName] = useState("");
+
+  const handleSaveFieldName = async (id) => {
+    const trimmed = editingFieldName.trim();
+    if (!trimmed) { setEditingFieldId(null); return; }
+    const { data } = await updateCustomField(id, trimmed);
+    if (data) onFieldUpdated(data);
+    setEditingFieldId(null);
+  };
 
   const handleSaveWorkplace = async () => {
     setWpSaving(true);
@@ -1496,14 +1688,11 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, workplaceAd
     if (data) { onFieldAdded(data); setNewFieldName(""); setAddingField(false); }
   };
 
+  if (!open) return null;
+
   return (
     <div style={{ marginBottom: 24, border: `1px solid ${C.border}`, background: C.card }}>
-      <div onClick={onToggle} style={{ padding: "12px 16px", cursor: "pointer", userSelect: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", fontWeight: 700, color: C.textMid, fontFamily: fonts.sans }}>Settings</span>
-        <span style={{ color: C.textFaint, fontSize: 13, transform: open ? "rotate(0)" : "rotate(-90deg)", transition: "transform 0.2s" }}>▾</span>
-      </div>
-      {open && (
-        <div style={{ padding: "4px 16px 20px", borderTop: `1px solid ${C.borderLight}` }}>
+      <div style={{ padding: "4px 16px 20px" }}>
           {/* Workplace address */}
           <div style={{ marginTop: 16, marginBottom: 24 }}>
             <div style={s.sectionHead}>Workplace Address</div>
@@ -1548,23 +1737,37 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, workplaceAd
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {customFields.map(f => (
                 <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: `1px solid ${C.borderLight}` }}>
-                  <div>
-                    <span style={{ fontFamily: fonts.serif, fontSize: 14, color: C.text }}>{f.name}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {editingFieldId === f.id ? (
+                      <input
+                        autoFocus
+                        value={editingFieldName}
+                        onChange={e => setEditingFieldName(e.target.value)}
+                        onBlur={() => handleSaveFieldName(f.id)}
+                        onKeyDown={e => { if (e.key === "Enter") handleSaveFieldName(f.id); if (e.key === "Escape") setEditingFieldId(null); }}
+                        style={{ ...s.textInput, fontSize: 14, fontFamily: fonts.serif, width: "auto", minWidth: 120, maxWidth: 260 }}
+                      />
+                    ) : (
+                      <span
+                        onClick={() => { setEditingFieldId(f.id); setEditingFieldName(f.name); }}
+                        title="Click to rename"
+                        style={{ fontFamily: fonts.serif, fontSize: 14, color: C.text, cursor: "text", borderBottom: `1px dashed ${C.borderLight}` }}
+                      >{f.name}</span>
+                    )}
                     <span style={{ fontSize: 9, fontFamily: fonts.sans, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.1em", marginLeft: 8 }}>{FIELD_TYPES.find(t => t.value === f.field_type)?.label || f.field_type}</span>
                   </div>
-                  <button onClick={async () => { await deleteCustomField(f.id); onFieldDeleted(f.id); }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 16, padding: "0 4px" }}>×</button>
+                  <button onClick={async () => { await deleteCustomField(f.id); onFieldDeleted(f.id); }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 16, padding: "0 4px", flexShrink: 0 }}>×</button>
                 </div>
               ))}
             </div>
           </div>
         </div>
-      )}
     </div>
   );
 }
 
 // ─── Sort / filter bar (Moda Living style) ──────────────────────────────────────
-function SortFilterBar({ customFields, sortBy, onSort, filters, onFilter, mobile, count }) {
+function SortFilterBar({ customFields, sortBy, onSort, filters, onFilter, mobile, count, settingsOpen, onSettingsToggle }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const rankingFields = customFields.filter(f => f.field_type === "ranking");
   const numberFields = customFields.filter(f => f.field_type === "number" || f.field_type === "cost");
@@ -1610,6 +1813,18 @@ function SortFilterBar({ customFields, sortBy, onSort, filters, onFilter, mobile
           {hasActiveFilters && (
             <button onClick={() => onFilter({})} style={{ fontSize: 11, background: "transparent", border: "none", color: C.text, cursor: "pointer", fontFamily: fonts.sans, fontWeight: 600, textDecoration: "underline" }}>Clear</button>
           )}
+          <button onClick={onSettingsToggle} style={{
+            padding: "8px 10px", display: "flex", alignItems: "center", justifyContent: "center",
+            border: `1.5px solid ${settingsOpen ? C.text : C.border}`,
+            borderRadius: 20, background: settingsOpen ? C.text : "transparent",
+            color: settingsOpen ? "#fff" : C.text,
+            cursor: "pointer", transition: "all 0.15s",
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
         </div>
       </div>
       {filtersOpen && (
@@ -1646,7 +1861,8 @@ export default function GaffTracker() {
   const [properties, setProperties] = useState([]);
   const [customFields, setCustomFields] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("rent"); // "rent" | "buy"
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem("property_default_tab") || "rent"); // "rent" | "buy"
+  const [viewMode, setViewMode] = useState("active"); // "active" | "archive"
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1656,14 +1872,15 @@ export default function GaffTracker() {
   const [displayCurrency, setDisplayCurrencyState] = useState(getDisplayCurrency);
   const [rates, setRates] = useState(null);
 
-  // Keep display currency in sync with App.jsx selector via storage events
+  // Keep display currency and default tab in sync with App.jsx selector via storage events
   useEffect(() => {
     const onStorage = (e) => {
       if (e.key === "display_currency") setDisplayCurrencyState(e.newValue || "GBP");
+      if (e.key === "property_default_tab" && viewMode === "active") setActiveTab(e.newValue || "rent");
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [viewMode]);
 
   // Fetch exchange rates once on mount
   useEffect(() => { fetchRates().then(setRates); }, []);
@@ -1694,9 +1911,20 @@ export default function GaffTracker() {
     setProperties(ps => ps.filter(p => p.id !== id));
   };
 
+  const handleMarkSold = async (property, soldAt) => {
+    const newCustomValues = { ...(property.custom_values || {}), __sold_at: soldAt || undefined };
+    if (!soldAt) delete newCustomValues.__sold_at;
+    await updateProperty(property.id, { custom_values: newCustomValues });
+    setProperties(ps => ps.map(p => p.id === property.id ? { ...p, custom_values: newCustomValues } : p));
+  };
+
   // Filter + sort
   const displayed = useMemo(() => {
-    let list = properties.filter(p => p.listing_type === activeTab);
+    // In archive mode show only sold, in active mode exclude sold
+    let list = properties.filter(p =>
+      p.listing_type === activeTab &&
+      (viewMode === "archive" ? !!p.custom_values?.__sold_at : !p.custom_values?.__sold_at)
+    );
 
     if (filters.minBeds) list = list.filter(p => p.bedrooms >= Number(filters.minBeds));
     if (filters.maxBeds) list = list.filter(p => p.bedrooms <= Number(filters.maxBeds));
@@ -1721,7 +1949,10 @@ export default function GaffTracker() {
       return 0;
     });
     return list;
-  }, [properties, activeTab, sortBy, filters, customFields]);
+  }, [properties, activeTab, sortBy, filters, customFields, viewMode]);
+
+  // All sold properties across both tabs (for insights)
+  const allSold = useMemo(() => properties.filter(p => !!p.custom_values?.__sold_at), [properties]);
 
   if (!user) {
     return (
@@ -1748,53 +1979,65 @@ export default function GaffTracker() {
       </div>
 
       {/* Tabs — clean pill style */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 0, marginBottom: 32 }}>
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 0, marginBottom: 32, flexWrap: "wrap", rowGap: 8 }}>
         {[{ key: "rent", label: "Renting" }, { key: "buy", label: "Buying" }].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
             padding: "10px 32px", border: `1.5px solid ${C.text}`,
             borderRadius: t.key === "rent" ? "24px 0 0 24px" : "0 24px 24px 0",
             background: activeTab === t.key ? C.text : "transparent", cursor: "pointer",
             color: activeTab === t.key ? "#fff" : C.text,
-            fontSize: 13, fontWeight: 600,
-            fontFamily: fonts.sans,
+            fontSize: 13, fontWeight: 600, fontFamily: fonts.sans,
             transition: "all 0.15s",
             marginLeft: t.key === "buy" ? -1.5 : 0,
           }}>{t.label}</button>
         ))}
-        <button onClick={() => { setEditingProperty(null); setDialogOpen(true); }} style={{
-          marginLeft: 16, padding: "10px 24px", border: "none",
-          borderRadius: 24, background: C.text, color: "#fff",
-          fontSize: 12, fontWeight: 700, fontFamily: fonts.sans,
-          cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.04em",
-          whiteSpace: "nowrap",
+        {viewMode === "active" && (
+          <button onClick={() => { setEditingProperty(null); setDialogOpen(true); }} style={{
+            marginLeft: 16, padding: "10px 24px", border: "none",
+            borderRadius: 24, background: C.text, color: "#fff",
+            fontSize: 12, fontWeight: 700, fontFamily: fonts.sans,
+            cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.04em",
+            whiteSpace: "nowrap",
+          }}>
+            + Add
+          </button>
+        )}
+        <button onClick={() => setViewMode(v => v === "archive" ? "active" : "archive")} style={{
+          marginLeft: 16, padding: "10px 20px", border: `1.5px solid ${viewMode === "archive" ? C.text : C.border}`,
+          borderRadius: 24, background: viewMode === "archive" ? C.text : "transparent",
+          color: viewMode === "archive" ? "#fff" : C.textMid,
+          fontSize: 12, fontWeight: 600, fontFamily: fonts.sans,
+          cursor: "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
+          transition: "all 0.15s",
         }}>
-          + Add
-        </button>
-        <button onClick={() => setSettingsOpen(v => !v)} title="Settings" style={{
-          marginLeft: 8, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "center",
-          border: `1.5px solid ${settingsOpen ? C.text : C.border}`,
-          borderRadius: 24, background: settingsOpen ? C.text : "transparent",
-          color: settingsOpen ? "#fff" : C.text,
-          cursor: "pointer", transition: "all 0.15s",
-        }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-          </svg>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+          Archive {allSold.length > 0 ? `(${allSold.length})` : ""}
         </button>
       </div>
+
+      {/* Archive mode banner */}
+      {viewMode === "archive" && (
+        <div style={{ marginBottom: 20, padding: "12px 20px", background: "#1a1a1a", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <div style={{ fontFamily: fonts.sans, fontSize: 13, color: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center", gap: 8 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            Sold Properties Archive
+          </div>
+          <button onClick={() => setViewMode("active")} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.6)", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, padding: "5px 12px", cursor: "pointer" }}>← Back to Active</button>
+        </div>
+      )}
 
       {/* Divider */}
       <div style={{ borderBottom: `1px solid ${C.border}`, marginBottom: 20 }} />
 
       {/* Sort/filter bar */}
-      <SortFilterBar customFields={customFields} sortBy={sortBy} onSort={setSortBy} filters={filters} onFilter={setFilters} mobile={mobile} count={displayed.length} />
+      <SortFilterBar customFields={customFields} sortBy={sortBy} onSort={setSortBy} filters={filters} onFilter={setFilters} mobile={mobile} count={displayed.length} settingsOpen={settingsOpen} onSettingsToggle={() => setSettingsOpen(v => !v)} />
 
       {/* Settings */}
       <SettingsPanel
         customFields={customFields}
         onFieldAdded={f => setCustomFields(prev => [...prev, f])}
         onFieldDeleted={id => setCustomFields(prev => prev.filter(f => f.id !== id))}
+        onFieldUpdated={updated => setCustomFields(prev => prev.map(f => f.id === updated.id ? updated : f))}
         workplaceAddress={workplaceAddress}
         onWorkplaceChange={setWorkplaceAddress}
         mobile={mobile}
@@ -1811,11 +2054,13 @@ export default function GaffTracker() {
             <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke={C.textLight} strokeWidth="1"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           </div>
           <p style={{ fontFamily: fonts.sans, color: C.textMid, fontSize: 15, margin: "0 0 20px" }}>
-            {properties.filter(p => p.listing_type === activeTab).length === 0
-              ? "No properties yet"
-              : "No properties match the current filters"}
+            {viewMode === "archive"
+              ? "No sold properties for this category yet."
+              : properties.filter(p => p.listing_type === activeTab && !p.custom_values?.__sold_at).length === 0
+                ? "No properties yet"
+                : "No properties match the current filters"}
           </p>
-          {properties.filter(p => p.listing_type === activeTab).length === 0 && (
+          {viewMode === "active" && properties.filter(p => p.listing_type === activeTab && !p.custom_values?.__sold_at).length === 0 && (
             <button onClick={() => { setEditingProperty(null); setDialogOpen(true); }} style={{ padding: "12px 28px", border: "none", borderRadius: 24, background: C.text, color: "#fff", fontSize: 13, fontWeight: 600, fontFamily: fonts.sans, cursor: "pointer" }}>
               + Add Property
             </button>
@@ -1833,6 +2078,7 @@ export default function GaffTracker() {
               workplaceAddress={workplaceAddress}
               onEdit={prop => { setEditingProperty(prop); setDialogOpen(true); }}
               onDelete={handleDelete}
+              onMarkSold={handleMarkSold}
               mobile={mobile}
               userId={user?.id}
               displayCurrency={displayCurrency}
@@ -1841,6 +2087,14 @@ export default function GaffTracker() {
             />
           ))}
         </div>
+      )}
+
+      {/* Insights panel — shown in archive mode */}
+      {!loading && viewMode === "archive" && (
+        <SoldInsightsPanel
+          soldProperties={properties.filter(p => p.listing_type === activeTab && !!p.custom_values?.__sold_at)}
+          customFields={customFields}
+        />
       )}
 
       {/* Footer */}

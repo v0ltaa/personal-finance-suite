@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { C, fonts, fmt, hpPresets, invPresets } from "../lib/tokens";
 import { runProjection, calcStampDuty, pmtCalc, defaultConfig } from "../lib/calc";
-import { useIsMobile, useAuth } from "../lib/hooks";
+import { useIsMobile, useAuth, useInflationSettings } from "../lib/hooks";
 import { loadScenarios, loadProperties } from "../lib/supabase";
 import Field from "../components/Field";
 import PresetSelector from "../components/PresetSelector";
@@ -9,6 +9,7 @@ import InteractiveChart from "../components/InteractiveChart";
 import SensitivityTable from "../components/SensitivityTable";
 import Stat from "../components/Stat";
 import Tip from "../components/Tip";
+import Toggle from "../components/Toggle";
 
 function ScenarioPicker({ title, scenarios, selected, onSelect, loading }) {
   return (
@@ -152,6 +153,9 @@ export default function Sandbox() {
   const [rentInflation, setRentInflation] = useState(defaultConfig.rentInflation);
   const [activeTab, setActiveTab] = useState("shortTerm");
 
+  // ── Inflation adjustment (shared with Finance Tracker via localStorage) ──
+  const { inflationRate, setInflationRate, inflationAdjusted, setInflationAdjusted } = useInflationSettings();
+
   useEffect(() => {
     if (!user) { setLoading(false); return; }
     Promise.all([loadScenarios("buy"), loadProperties()]).then(([b, p]) => {
@@ -194,6 +198,21 @@ export default function Sandbox() {
 
   const fB = results?.wD?.length > 0 ? results.wD[results.wD.length - 1].buyWealth : 0;
   const fR = results?.wD?.length > 0 ? results.wD[results.wD.length - 1].rentWealth : 0;
+
+  // ── Inflation-adjusted wealth data ──
+  const inflationAdjustedWD = useMemo(() => {
+    if (!results?.wD || !inflationAdjusted || !inflationRate) return results?.wD ?? [];
+    const r = inflationRate / 100;
+    return results.wD.map((d) => {
+      const discount = Math.pow(1 + r, d.month / 12);
+      return { ...d, buyWealth: Math.round(d.buyWealth / discount), rentWealth: Math.round(d.rentWealth / discount) };
+    });
+  }, [results?.wD, inflationAdjusted, inflationRate]);
+
+  // Final real-term values for summary stats
+  const finalDiscount = inflationAdjusted && inflationRate ? Math.pow(1 + inflationRate / 100, horizonYears) : 1;
+  const fBDisplay = inflationAdjusted ? Math.round(fB / finalDiscount) : fB;
+  const fRDisplay = inflationAdjusted ? Math.round(fR / finalDiscount) : fR;
 
   const exportCSV = () => {
     if (!results || !runConfig) return;
@@ -361,7 +380,7 @@ export default function Sandbox() {
             {activeTab === "longTerm" && (
               <div>
                 {(() => {
-                  const d = fB - fR, bw = d > 0;
+                  const d = fBDisplay - fRDisplay, bw = d > 0;
                   return (
                     <div style={{
                       borderLeft: `4px solid ${bw ? C.green : C.red}`,
@@ -370,25 +389,42 @@ export default function Sandbox() {
                     }}>
                       <div style={{ fontSize: 20, fontFamily: fonts.serif, fontWeight: 400, color: bw ? C.green : C.red, marginBottom: 6 }}>
                         {bw ? "Buying" : "Renting + investing"} builds more wealth over {horizonYears} years
+                        {inflationAdjusted && <span style={{ fontSize: 14, color: C.accent, marginLeft: 10 }}>(in today's £)</span>}
                       </div>
                       <p style={{ fontSize: 13, fontFamily: fonts.serif, color: C.textMid, lineHeight: 1.6, margin: 0, fontStyle: "italic" }}>
                         {bw
-                          ? `Buying leaves you ${fmt(Math.abs(d))} wealthier.${results.wBE ? ` Crossover at year ${(results.wBE / 12).toFixed(1)}.` : ""}`
-                          : `Renting and investing at ${investReturn}% leaves you ${fmt(Math.abs(d))} ahead.${results.wBE ? ` Buying catches up at year ${(results.wBE / 12).toFixed(1)}.` : " Buying doesn't catch up."}`}
+                          ? `Buying leaves you ${fmt(Math.abs(d))} wealthier${inflationAdjusted ? " in today's purchasing power" : ""}.${results.wBE ? ` Crossover at year ${(results.wBE / 12).toFixed(1)}.` : ""}`
+                          : `Renting and investing at ${investReturn}% leaves you ${fmt(Math.abs(d))} ahead${inflationAdjusted ? " in today's purchasing power" : ""}.${results.wBE ? ` Buying catches up at year ${(results.wBE / 12).toFixed(1)}.` : " Buying doesn't catch up."}`}
                       </p>
                     </div>
                   );
                 })()}
 
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 24 }}>
-                  <Stat mobile={false} label="Buy: Net Equity" value={fmt(fB)} sub="After mortgage & selling costs" />
-                  <Stat mobile={false} label="Rent: Portfolio" value={fmt(fR)} sub={`Deposit + savings at ${investReturn}%`} />
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 16 }}>
+                  <Stat mobile={false} label="Buy: Net Equity" value={fmt(fBDisplay)} sub={inflationAdjusted ? "In today's purchasing power" : "After mortgage & selling costs"} />
+                  <Stat mobile={false} label="Rent: Portfolio" value={fmt(fRDisplay)} sub={inflationAdjusted ? "In today's purchasing power" : `Deposit + savings at ${investReturn}%`} />
                   <Stat mobile={false} label="Wealth Break-Even" value={results.wBE != null ? `${(results.wBE / 12).toFixed(1)} yrs` : "N/A"} sub={results.wBE != null ? `Month ${results.wBE}` : "Not within horizon"} />
                 </div>
 
-                <InteractiveChart mobile={false} data={results.wD} keys={["buyWealth", "rentWealth"]}
+                {/* Inflation controls */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-end", marginBottom: 20, padding: "14px 16px", background: C.card, border: `1px solid ${C.borderLight}` }}>
+                  <div style={{ width: 155 }}>
+                    <Field label="Assumed Inflation" value={inflationRate} onChange={setInflationRate} suffix="% p.a." tip="Bank of England target is 2%. Over 25 years at 2%, the discount is ~40% — nominal £350k becomes ~£212k in today's money." />
+                  </div>
+                  <div>
+                    <Toggle
+                      label="Show in today's money (inflation-adjusted)"
+                      value={inflationAdjusted}
+                      onChange={setInflationAdjusted}
+                      tip="Inflation-adjusted values show what your future wealth would be worth in today's purchasing power. Over 25 years at 2% inflation, the discount is ~40%."
+                    />
+                  </div>
+                </div>
+
+                <InteractiveChart mobile={false} data={inflationAdjusted ? inflationAdjustedWD : results.wD} keys={["buyWealth", "rentWealth"]}
                   colors={[C.green, C.red]} labels={["Buy (net equity)", "Rent + invest"]}
                   title="Wealth Over Time" breakEvenMonth={results.wBE}
+                  inflationAdjusted={inflationAdjusted}
                 />
               </div>
             )}

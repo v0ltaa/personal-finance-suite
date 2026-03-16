@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { C, fonts, fmt, fmtK } from "../lib/tokens";
 import { pmtCalc } from "../lib/calc";
-import { useIsMobile, useAuth } from "../lib/hooks";
+import { useIsMobile, useAuth, useInflationSettings } from "../lib/hooks";
 import { loadProperties, loadScenarios } from "../lib/supabase";
 import { SaveDialog, LoadDialog } from "../components/ScenarioManager";
 import Field from "../components/Field";
@@ -246,6 +246,9 @@ export default function FinanceTracker() {
   const [investReturnRate, setInvestReturnRate] = useState(7);
   const [projectionYears, setProjectionYears] = useState(10);
 
+  // ── Inflation adjustment (shared with Rent vs Buy via localStorage) ──
+  const { inflationRate, setInflationRate, inflationAdjusted, setInflationAdjusted } = useInflationSettings();
+
   // ── Compare mode ──
   const [compareMode, setCompareMode] = useState(false);
   const [comparePropertyId, setComparePropertyId] = useState(null);
@@ -404,6 +407,16 @@ export default function FinanceTracker() {
     }
     return data;
   }, [financial.emergencyFund, financial.investments, investReturnRate, projectionYears, categoryTotals]);
+
+  // ── Inflation-adjusted projection data ──
+  const displayProjectionData = useMemo(() => {
+    if (!inflationAdjusted || !inflationRate) return projectionData;
+    const r = inflationRate / 100;
+    return projectionData.map((d) => {
+      const discount = Math.pow(1 + r, d.month / 12);
+      return { ...d, emergency: Math.round(d.emergency / discount), investments: Math.round(d.investments / discount) };
+    });
+  }, [projectionData, inflationAdjusted, inflationRate]);
 
   // ── Comparison mode calculations ──
   const compareProperty = properties.find((p) => p.id === comparePropertyId) || null;
@@ -840,16 +853,28 @@ export default function FinanceTracker() {
           <div style={{ width: 155 }}>
             <Field label="Projection" value={projectionYears} onChange={setProjectionYears} suffix="years" />
           </div>
+          <div style={{ width: 155 }}>
+            <Field label="Assumed Inflation" value={inflationRate} onChange={setInflationRate} suffix="% p.a." tip="Bank of England target is 2%. Used to calculate real (today's money) values." />
+          </div>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <Toggle
+            label="Show in today's money (inflation-adjusted)"
+            value={inflationAdjusted}
+            onChange={setInflationAdjusted}
+            tip="Inflation-adjusted values show what your future savings would be worth in today's purchasing power. At 2% inflation over 10 years, £100k nominal is worth ~£82k in today's money."
+          />
         </div>
         {(Number(financial.emergencyFund) > 0 || Number(financial.investments) > 0) && projectionData.length > 2 && (
           <InteractiveChart
-            data={projectionData}
+            data={displayProjectionData}
             keys={["emergency", "investments"]}
             colors={[C.accent, C.green]}
             labels={["Emergency Fund", "Investments"]}
             title="Projected Growth"
             mobile={mobile}
             formatY={fmtK}
+            inflationAdjusted={inflationAdjusted}
           />
         )}
         {Number(financial.emergencyFund) === 0 && Number(financial.investments) === 0 && (

@@ -52,6 +52,7 @@ function monthToDate(monthOffset) {
 export default function InteractiveChart({
   data, keys, colors, labels, title,
   breakEvenMonth, annotation, mobile, formatY = fmtK,
+  inflationAdjusted = false,
 }) {
   const [chartType, setChartType] = useState("line");
   const [granularity, setGranularity] = useState("monthly");
@@ -83,7 +84,7 @@ export default function InteractiveChart({
   const datasets = keys.map((key, i) => ({
     label: labels?.[i] || key,
     data: processed.map((d) => Math.round(d[key])),
-    borderColor: colors[i],
+    borderColor: inflationAdjusted ? colors[i] + "bb" : colors[i],
     backgroundColor: i === 0
       ? (chartType === "bar" ? colors[i] + "40" : colors[i] + "10")
       : (chartType === "bar" ? colors[i] + "40" : "transparent"),
@@ -92,6 +93,7 @@ export default function InteractiveChart({
     pointRadius: processed.length > 100 ? 0 : 2,
     pointHoverRadius: 5,
     borderWidth: chartType === "line" ? 2.5 : 0,
+    borderDash: inflationAdjusted && chartType === "line" ? [6, 4] : [],
   }));
 
   const chartData = { labels: chartLabels, datasets };
@@ -151,6 +153,12 @@ export default function InteractiveChart({
           font: { family: fonts.sans, size: 10 }, color: C.textFaint,
           callback: (v) => formatY(v),
         },
+        title: inflationAdjusted ? {
+          display: true,
+          text: "Value (in today's £)",
+          font: { family: fonts.sans, size: 9 },
+          color: C.textFaint,
+        } : { display: false },
       },
     },
   };
@@ -170,7 +178,14 @@ export default function InteractiveChart({
   return (
     <div style={{ marginTop: 20, marginBottom: 12 }}>
       {title && (
-        <div style={{ fontSize: 10, fontWeight: 600, color: C.textLight, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.12em", fontFamily: fonts.sans }}>{title}</div>
+        <div style={{ fontSize: 10, fontWeight: 600, color: C.textLight, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.12em", fontFamily: fonts.sans, display: "flex", alignItems: "center", gap: 8 }}>
+          {title}
+          {inflationAdjusted && (
+            <span style={{ fontSize: 9, fontWeight: 600, color: C.accent, background: C.accentLight, padding: "2px 6px", borderRadius: 2, textTransform: "uppercase", letterSpacing: "0.04em", border: `1px solid ${C.accent}33` }}>
+              Real terms
+            </span>
+          )}
+        </div>
       )}
 
       {/* Controls row */}

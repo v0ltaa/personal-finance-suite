@@ -24,6 +24,7 @@ export default function App() {
   const [showAuth, setShowAuth] = useState(false);
   const [showScenarios, setShowScenarios] = useState(false);
   const [displayCurrency, setDisplayCurrencyState] = useState(getDisplayCurrency);
+  const [defaultPropTab, setDefaultPropTabState] = useState(() => localStorage.getItem("property_default_tab") || "rent");
   const fileInputRef = useRef(null);
 
   const handleCurrencyChange = (code) => {
@@ -31,6 +32,12 @@ export default function App() {
     setDisplayCurrencyState(code);
     // Propagate via storage event so GaffTracker re-reads it
     window.dispatchEvent(new StorageEvent("storage", { key: "display_currency", newValue: code }));
+  };
+
+  const handleDefaultPropTabChange = (tab) => {
+    localStorage.setItem("property_default_tab", tab);
+    setDefaultPropTabState(tab);
+    window.dispatchEvent(new StorageEvent("storage", { key: "property_default_tab", newValue: tab }));
   };
 
   const handleAvatarUpload = async (e) => {
@@ -73,6 +80,20 @@ export default function App() {
             {SUPPORTED_CURRENCIES.map((code) => (
               <option key={code} value={code}>{currencySymbol(code)} {code}</option>
             ))}
+          </select>
+          {/* Default property tab */}
+          <select
+            value={defaultPropTab}
+            onChange={(e) => handleDefaultPropTabChange(e.target.value)}
+            title="Properties: show Rent or Buy listings first"
+            style={{
+              border: `1.5px solid ${C.border}`, background: "transparent",
+              fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.textMid,
+              padding: "5px 8px", cursor: "pointer", outline: "none",
+            }}
+          >
+            <option value="rent">Props: Rent</option>
+            <option value="buy">Props: Buy</option>
           </select>
           {/* Scenario icon */}
           <button title="Scenarios" onClick={() => {
