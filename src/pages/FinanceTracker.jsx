@@ -63,14 +63,14 @@ function PropertyCard({ property, isSelected, onClick, mobile }) {
     }}>
       <div style={{
         width: 36, height: 36, flexShrink: 0,
-        background: isSelected ? "rgba(255,255,255,0.1)" : C.bg,
-        border: `1px solid ${isSelected ? "rgba(255,255,255,0.2)" : C.borderLight}`,
+        background: isSelected ? C.accentLight : C.bg,
+        border: `1px solid ${isSelected ? C.border : C.borderLight}`,
         overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         {property.photo_url ? (
           <img src={property.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isSelected ? "rgba(255,255,255,0.4)" : C.textFaint} strokeWidth="1.5">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isSelected ? C.bg : C.textFaint} strokeWidth="1.5">
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
             <polyline points="9 22 9 12 15 12 15 22" />
           </svg>
@@ -87,21 +87,21 @@ function PropertyCard({ property, isSelected, onClick, mobile }) {
           <span style={{
             fontSize: 8, fontFamily: fonts.sans, fontWeight: 700, textTransform: "uppercase",
             letterSpacing: "0.08em", padding: "1px 5px",
-            background: isSelected ? "rgba(255,255,255,0.15)" : (isRent ? C.accentLight : C.greenBg),
-            color: isSelected ? "rgba(255,255,255,0.6)" : (isRent ? C.accent : C.green),
+            background: isSelected ? C.accentLight : (isRent ? C.accentLight : C.greenBg),
+            color: isSelected ? C.bg : (isRent ? C.accent : C.green),
           }}>
             {isRent ? "Rent" : "Buy"}
           </span>
           <span style={{
             fontFamily: fonts.sans, fontSize: 10,
-            color: isSelected ? "rgba(255,255,255,0.45)" : C.textLight,
+            color: isSelected ? C.bg : C.textLight,
           }}>
             {property.price ? (isRent ? `${fmt(property.price)}/mo` : fmt(property.price)) : "No price"}
           </span>
         </div>
       </div>
       {isSelected && (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.bg} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="20 6 9 17 4 12" />
         </svg>
       )}
@@ -607,7 +607,7 @@ export default function FinanceTracker() {
                         </div>
                       </div>
                       {isSel && (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.bg} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
                       )}
@@ -922,7 +922,7 @@ export default function FinanceTracker() {
                           <div style={{ fontFamily: fonts.serif, fontSize: 13, color: isSel ? C.bg : C.text }}>{s.config?.propertyName || s.name}</div>
                         </div>
                         {isSel && (
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.bg} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
                         )}

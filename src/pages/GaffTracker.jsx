@@ -82,12 +82,12 @@ function injectCardStyles() {
   document.head.appendChild(el);
 }
 
-// ─── Shared styles ────────────────────────────────────────────────────────────
+// ─── Shared styles ── (getters so C.proxy is read on every render, not once at module load)
 const s = {
-  label: { fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.textLight, letterSpacing: "0.12em", textTransform: "uppercase", display: "block", marginBottom: 6 },
-  sectionHead: { fontSize: 9, letterSpacing: "0.22em", textTransform: "uppercase", fontWeight: 700, fontFamily: fonts.sans, color: C.accent, borderBottom: `1px solid ${C.border}`, paddingBottom: 8, marginBottom: 18 },
-  textInput: { width: "100%", background: "transparent", border: "none", borderBottom: `1.5px solid ${C.border}`, outline: "none", padding: "7px 0", fontFamily: fonts.serif, fontSize: 16, color: C.text, boxSizing: "border-box" },
-  textarea: { width: "100%", background: "transparent", border: `1.5px solid ${C.border}`, outline: "none", padding: "10px 12px", fontFamily: fonts.serif, fontSize: 14, color: C.text, boxSizing: "border-box", resize: "vertical", minHeight: 72, lineHeight: 1.5 },
+  get label() { return { fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.textLight, letterSpacing: "0.12em", textTransform: "uppercase", display: "block", marginBottom: 6 }; },
+  get sectionHead() { return { fontSize: 9, letterSpacing: "0.22em", textTransform: "uppercase", fontWeight: 700, fontFamily: fonts.sans, color: C.accent, borderBottom: `1px solid ${C.border}`, paddingBottom: 8, marginBottom: 18 }; },
+  get textInput() { return { width: "100%", background: "transparent", border: "none", borderBottom: `1.5px solid ${C.border}`, outline: "none", padding: "7px 0", fontFamily: fonts.serif, fontSize: 16, color: C.text, boxSizing: "border-box" }; },
+  get textarea() { return { width: "100%", background: "transparent", border: `1.5px solid ${C.border}`, outline: "none", padding: "10px 12px", fontFamily: fonts.serif, fontSize: 14, color: C.text, boxSizing: "border-box", resize: "vertical", minHeight: 72, lineHeight: 1.5 }; },
   btn: (active) => ({ padding: "7px 16px", border: `1.5px solid ${active ? C.text : C.border}`, borderRadius: 0, background: active ? C.text : "transparent", color: active ? C.bg : C.textMid, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: fonts.sans, transition: "all 0.15s" }),
 };
 
@@ -1985,7 +1985,7 @@ export default function GaffTracker() {
             padding: "10px 32px", border: `1.5px solid ${C.text}`,
             borderRadius: t.key === "rent" ? "24px 0 0 24px" : "0 24px 24px 0",
             background: activeTab === t.key ? C.text : "transparent", cursor: "pointer",
-            color: activeTab === t.key ? "#fff" : C.text,
+            color: activeTab === t.key ? C.bg : C.text,
             fontSize: 13, fontWeight: 600, fontFamily: fonts.sans,
             transition: "all 0.15s",
             marginLeft: t.key === "buy" ? -1.5 : 0,
@@ -2017,12 +2017,12 @@ export default function GaffTracker() {
 
       {/* Archive mode banner */}
       {viewMode === "archive" && (
-        <div style={{ marginBottom: 20, padding: "12px 20px", background: "#1a1a1a", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          <div style={{ fontFamily: fonts.sans, fontSize: 13, color: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center", gap: 8 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+        <div style={{ marginBottom: 20, padding: "12px 20px", background: C.text, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <div style={{ fontFamily: fonts.sans, fontSize: 13, color: C.bg, display: "flex", alignItems: "center", gap: 8 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.bg} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
             Sold Properties Archive
           </div>
-          <button onClick={() => setViewMode("active")} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.6)", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, padding: "5px 12px", cursor: "pointer" }}>← Back to Active</button>
+          <button onClick={() => setViewMode("active")} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.bg, fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, padding: "5px 12px", cursor: "pointer" }}>← Back to Active</button>
         </div>
       )}
 

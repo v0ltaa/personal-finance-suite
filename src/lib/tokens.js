@@ -1,13 +1,38 @@
 // ── Design tokens ──
-export const C = {
-  bg: "#ffffff", card: "#fff", border: "#e5e5e5", borderLight: "#f0f0f0",
-  text: "#1a1a1a", textMid: "#666", textLight: "#999", textFaint: "#ccc",
-  accent: "#1a1a1a", accentLight: "rgba(26,26,26,0.06)",
-  green: "#2a7d2a", greenBg: "rgba(42,125,42,0.06)", greenBorder: "rgba(42,125,42,0.15)",
-  red: "#c44", redBg: "rgba(204,68,68,0.06)", redBorder: "rgba(204,68,68,0.15)",
-  amber: "#c07d00",
-  pill: "#1a1a1a", pillText: "#fff",
+
+export const darkTheme = {
+  bg: "#0e0b0a", card: "#1a1410", border: "#2e2520", borderLight: "#231d18",
+  text: "#e8ddd5", textMid: "#9a8880", textLight: "#6a5a54", textFaint: "#3d2e28",
+  accent: "#c4503a", accentLight: "rgba(196,80,58,0.12)",
+  green: "#5aabcc", greenBg: "rgba(90,171,204,0.10)", greenBorder: "rgba(90,171,204,0.22)",
+  red: "#d45840", redBg: "rgba(212,88,64,0.10)", redBorder: "rgba(212,88,64,0.22)",
+  amber: "#d09040",
+  pill: "#c4503a", pillText: "#fdf5f0",
 };
+
+export const lightTheme = {
+  bg: "#f5ede5", card: "#faf5f0", border: "#ddd0c6", borderLight: "#ece4db",
+  text: "#1e1410", textMid: "#7a6258", textLight: "#a89490", textFaint: "#ccbfb8",
+  accent: "#8c3520", accentLight: "rgba(140,53,32,0.06)",
+  green: "#3a7fa8", greenBg: "rgba(58,127,168,0.07)", greenBorder: "rgba(58,127,168,0.18)",
+  red: "#b83825", redBg: "rgba(184,56,37,0.07)", redBorder: "rgba(184,56,37,0.18)",
+  amber: "#b07830",
+  pill: "#8c3520", pillText: "#fdf7f3",
+};
+
+// Module-level theme state — mutated by ThemeProvider on toggle
+let _theme = localStorage.getItem("theme") || "dark";
+export function _setTheme(t) { _theme = t; }
+export function _getTheme() { return _theme; }
+
+// Reactive proxy: all existing `import { C }` consumers stay unchanged;
+// on re-render they automatically pick up the new theme.
+export const C = new Proxy({}, {
+  get(_, key) {
+    return (_theme === "dark" ? darkTheme : lightTheme)[key];
+  },
+});
+
 export const fonts = { serif: "'Instrument Serif', serif", sans: "'Instrument Sans', sans-serif" };
 
 export const fmt = (n) => "£" + Math.round(n).toLocaleString("en-GB");
@@ -31,7 +56,7 @@ export const invPresets = [
   { label: "S&P 500", value: 10, desc: "US large cap long-term avg" },
 ];
 
-// Chart color palette for scenario comparison
+// Chart colors — brighter palette works on both light and dark
 export const scenarioColors = [
-  "#2a7d2a", "#c44", "#b8860b", "#4a6fa5", "#8b5cf6", "#059669"
+  "#c4503a", "#5aabcc", "#d09040", "#8b6cc4", "#4aaa88", "#d4786a"
 ];

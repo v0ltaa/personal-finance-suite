@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "react-easy-crop/react-easy-crop.css";
 import { HashRouter, Routes, Route } from "react-router-dom";
+import { ThemeProvider } from "./lib/theme";
 import App from "./App";
 import BuyVsRent from "./pages/BuyVsRent";
 import Sandbox from "./pages/Sandbox";
@@ -12,6 +13,7 @@ import FinanceTracker from "./pages/FinanceTracker";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
+    <ThemeProvider>
     <HashRouter>
       <Routes>
         <Route element={<App />}>
@@ -24,5 +26,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         </Route>
       </Routes>
     </HashRouter>
+    </ThemeProvider>
   </React.StrictMode>
 );

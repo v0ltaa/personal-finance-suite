@@ -39,14 +39,14 @@ function ScenarioPicker({ title, scenarios, selected, onSelect, loading }) {
               }}>
                 <div style={{
                   width: 30, height: 30, flexShrink: 0,
-                  background: isSelected ? "rgba(255,255,255,0.1)" : C.bg,
-                  border: `1px solid ${isSelected ? "rgba(255,255,255,0.2)" : C.borderLight}`,
+                  background: isSelected ? C.accentLight : C.bg,
+                  border: `1px solid ${isSelected ? C.border : C.borderLight}`,
                   overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
                   {hasPhoto ? (
                     <img src={s.config.propertyPhotoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isSelected ? "rgba(255,255,255,0.4)" : C.textFaint} strokeWidth="1.5">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isSelected ? C.bg : C.textFaint} strokeWidth="1.5">
                       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
                       <polyline points="9 22 9 12 15 12 15 22"/>
                     </svg>
@@ -56,12 +56,12 @@ function ScenarioPicker({ title, scenarios, selected, onSelect, loading }) {
                   <div style={{ fontFamily: fonts.serif, fontSize: 13, color: isSelected ? C.bg : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {s.config?.propertyName || s.name}
                   </div>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: isSelected ? "rgba(255,255,255,0.45)" : C.textLight, marginTop: 1 }}>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: isSelected ? C.bg : C.textLight, marginTop: 1 }}>
                     {s.name}
                   </div>
                 </div>
                 {isSelected && (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.bg} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12"/>
                   </svg>
                 )}
@@ -101,14 +101,14 @@ function FlatPicker({ flats, selected, onSelect, loading }) {
               }}>
                 <div style={{
                   width: 30, height: 30, flexShrink: 0,
-                  background: isSelected ? "rgba(255,255,255,0.1)" : C.bg,
-                  border: `1px solid ${isSelected ? "rgba(255,255,255,0.2)" : C.borderLight}`,
+                  background: isSelected ? C.accentLight : C.bg,
+                  border: `1px solid ${isSelected ? C.border : C.borderLight}`,
                   overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
                   {f.photo_url ? (
                     <img src={f.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isSelected ? "rgba(255,255,255,0.4)" : C.textFaint} strokeWidth="1.5">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isSelected ? C.bg : C.textFaint} strokeWidth="1.5">
                       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
                       <polyline points="9 22 9 12 15 12 15 22"/>
                     </svg>
@@ -118,12 +118,12 @@ function FlatPicker({ flats, selected, onSelect, loading }) {
                   <div style={{ fontFamily: fonts.serif, fontSize: 13, color: isSelected ? C.bg : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {f.name}
                   </div>
-                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: isSelected ? "rgba(255,255,255,0.45)" : C.textLight, marginTop: 1 }}>
+                  <div style={{ fontFamily: fonts.sans, fontSize: 10, color: isSelected ? C.bg : C.textLight, marginTop: 1 }}>
                     {f.price ? `${fmt(f.price)}/mo` : "No price set"}{f.location ? ` · ${f.location}` : ""}
                   </div>
                 </div>
                 {isSelected && (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.bg} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12"/>
                   </svg>
                 )}
