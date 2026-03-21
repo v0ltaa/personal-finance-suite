@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { C, fonts } from "../lib/tokens";
 import { supabase } from "../lib/supabase";
+import { Dialog, DialogHeader, DialogTitle, DialogBody } from "./ui/dialog";
+import { Input } from "./ui/input";
+import { Button } from "./ui/button";
 
 export default function AuthModal({ onClose, auth }) {
   const [mode, setMode] = useState("login");
@@ -12,12 +14,18 @@ export default function AuthModal({ onClose, auth }) {
 
   if (!supabase) {
     return (
-      <Overlay onClose={onClose}>
-        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, margin: "0 0 16px 0", color: C.text }}>Supabase Not Configured</h2>
-        <p style={{ fontFamily: fonts.serif, color: C.textMid, lineHeight: 1.6, margin: 0 }}>
-          To enable user accounts, set <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> in a <code>.env</code> file at the project root.
-        </p>
-      </Overlay>
+      <Dialog open onClose={onClose} className="max-w-sm">
+        <DialogHeader onClose={onClose}>
+          <DialogTitle>Supabase Not Configured</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Set <code className="text-xs bg-muted px-1 py-0.5 rounded">VITE_SUPABASE_URL</code> and{" "}
+            <code className="text-xs bg-muted px-1 py-0.5 rounded">VITE_SUPABASE_ANON_KEY</code> in a{" "}
+            <code className="text-xs bg-muted px-1 py-0.5 rounded">.env</code> file to enable accounts.
+          </p>
+        </DialogBody>
+      </Dialog>
     );
   }
 
@@ -33,52 +41,49 @@ export default function AuthModal({ onClose, auth }) {
   };
 
   return (
-    <Overlay onClose={onClose}>
-      <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, margin: "0 0 20px 0", color: C.text }}>
-        {mode === "login" ? "Sign In" : "Create Account"}
-      </h2>
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {mode === "signup" && (
-          <input type="text" placeholder="Username (display name)" value={username} onChange={(e) => setUsername(e.target.value)}
-            style={{ padding: "10px 12px", border: `1.5px solid ${C.border}`, borderRadius: 0, fontFamily: fonts.sans, fontSize: 14, outline: "none", background: "transparent", color: C.text }} />
-        )}
-        <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required
-          style={{ padding: "10px 12px", border: `1.5px solid ${C.border}`, borderRadius: 0, fontFamily: fonts.sans, fontSize: 14, outline: "none", background: "transparent", color: C.text }} />
-        <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6}
-          style={{ padding: "10px 12px", border: `1.5px solid ${C.border}`, borderRadius: 0, fontFamily: fonts.sans, fontSize: 14, outline: "none", background: "transparent", color: C.text }} />
-        {error && <div style={{ color: C.red, fontSize: 12, fontFamily: fonts.sans }}>{error}</div>}
-        <button type="submit" disabled={loading} style={{
-          padding: "12px", border: "none", background: C.text, color: C.bg,
-          fontSize: 13, fontWeight: 600, fontFamily: fonts.sans, cursor: "pointer",
-          letterSpacing: "0.04em", textTransform: "uppercase", opacity: loading ? 0.6 : 1,
-        }}>{loading ? "..." : mode === "login" ? "Sign In" : "Sign Up"}</button>
-      </form>
-      <div style={{ marginTop: 16, textAlign: "center" }}>
-        <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}
-          style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600 }}>
-          {mode === "login" ? "Need an account? Sign up" : "Already have an account? Sign in"}
-        </button>
-      </div>
-    </Overlay>
-  );
-}
-
-function Overlay({ children, onClose }) {
-  return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
-      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
-    }}>
-      <div style={{
-        background: C.card, padding: 32, width: "100%", maxWidth: 380,
-        boxShadow: "0 16px 64px rgba(0,0,0,0.15)", position: "relative",
-      }}>
-        <button onClick={onClose} style={{
-          position: "absolute", top: 12, right: 12, background: "none", border: "none",
-          fontSize: 18, color: C.textLight, cursor: "pointer",
-        }}>×</button>
-        {children}
-      </div>
-    </div>
+    <Dialog open onClose={onClose} className="max-w-sm">
+      <DialogHeader onClose={onClose}>
+        <DialogTitle>{mode === "login" ? "Sign In" : "Create Account"}</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          {mode === "signup" && (
+            <Input
+              type="text"
+              placeholder="Display name"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+          )}
+          <Input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <Input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={6}
+          />
+          {error && <p className="text-xs text-danger">{error}</p>}
+          <Button type="submit" variant="default" disabled={loading} className="w-full mt-1">
+            {loading ? "Please wait…" : mode === "login" ? "Sign In" : "Sign Up"}
+          </Button>
+        </form>
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}
+            className="text-xs font-semibold text-brand hover:text-brand/80 transition-colors"
+          >
+            {mode === "login" ? "Need an account? Sign up" : "Already have an account? Sign in"}
+          </button>
+        </div>
+      </DialogBody>
+    </Dialog>
   );
 }

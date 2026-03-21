@@ -1,21 +1,24 @@
-import { C, fonts } from "../lib/tokens";
 import Tip from "./Tip";
 
 export default function Toggle({ label, value, onChange, tip }) {
   return (
-    <div onClick={() => onChange(!value)} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none" }}>
-      <div style={{
-        width: 36, height: 20, borderRadius: 10, background: value ? C.accent : C.border,
-        transition: "background 0.2s", position: "relative", flexShrink: 0,
-      }}>
-        <div style={{
-          width: 16, height: 16, borderRadius: 8, background: "#fff",
-          position: "absolute", top: 2, left: value ? 18 : 2, transition: "left 0.2s",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
-        }} />
+    <label className="flex items-center gap-2.5 cursor-pointer select-none group">
+      <div
+        onClick={() => onChange(!value)}
+        className={[
+          "relative w-9 h-5 rounded-full shrink-0 transition-colors duration-200",
+          value ? "bg-brand" : "bg-input border border-border",
+        ].join(" ")}
+      >
+        <span className={[
+          "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200",
+          value ? "left-[18px]" : "left-0.5",
+        ].join(" ")} />
       </div>
-      <span style={{ fontSize: 13, fontFamily: fonts.sans, color: C.text, fontWeight: 500 }}>{label}</span>
+      <span className="text-sm font-medium text-foreground group-hover:text-foreground/90 transition-colors">
+        {label}
+      </span>
       {tip && <Tip text={tip} />}
-    </div>
+    </label>
   );
 }

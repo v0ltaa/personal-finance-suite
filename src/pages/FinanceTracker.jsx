@@ -1,30 +1,33 @@
 import { useState, useEffect, useMemo } from "react";
-import { C, fonts, fmt, fmtK } from "../lib/tokens";
+import { fmt, fmtK } from "../lib/tokens";
 import { pmtCalc } from "../lib/calc";
 import { useIsMobile, useAuth, useInflationSettings } from "../lib/hooks";
 import { loadProperties, loadScenarios } from "../lib/supabase";
 import { SaveDialog, LoadDialog } from "../components/ScenarioManager";
+import { cn } from "../lib/utils";
 import Field from "../components/Field";
 import Section from "../components/Section";
 import Stat from "../components/Stat";
 import Toggle from "../components/Toggle";
 import InteractiveChart from "../components/InteractiveChart";
 import SummaryBar from "../components/SummaryBar";
+import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
 
 // ── Affordability thresholds (calibrated for young urban professionals) ──
 
 const HOUSING_THRESHOLDS = [
-  { max: 35, label: "Great", color: C.green },
-  { max: 45, label: "Normal", color: C.accent },
-  { max: 55, label: "Tight", color: "#e67e00" },
-  { max: 100, label: "Stretched", color: C.red },
+  { max: 35, label: "Great", variant: "success" },
+  { max: 45, label: "Normal", variant: "warning" },
+  { max: 55, label: "Tight", variant: "warning" },
+  { max: 100, label: "Stretched", variant: "danger" },
 ];
 
 const SAVINGS_THRESHOLDS = [
-  { max: 5, label: "Tight", color: C.red },
-  { max: 10, label: "Okay", color: "#e67e00" },
-  { max: 20, label: "Good", color: C.accent },
-  { max: 100, label: "Great", color: C.green },
+  { max: 5, label: "Tight", variant: "danger" },
+  { max: 10, label: "Okay", variant: "warning" },
+  { max: 20, label: "Good", variant: "secondary" },
+  { max: 100, label: "Great", variant: "success" },
 ];
 
 function getThreshold(value, thresholds) {
@@ -54,54 +57,83 @@ const DEFAULT_RATIOS = {
 function PropertyCard({ property, isSelected, onClick, mobile }) {
   const isRent = property.listing_type === "rent";
   return (
-    <button onClick={onClick} style={{
-      display: "flex", alignItems: "center", gap: 10,
-      padding: "8px 12px", minWidth: mobile ? "100%" : 220,
-      border: `1.5px solid ${isSelected ? C.text : C.border}`,
-      background: isSelected ? C.text : "transparent",
-      cursor: "pointer", textAlign: "left", transition: "all 0.15s", flexShrink: 0,
-    }}>
-      <div style={{
-        width: 36, height: 36, flexShrink: 0,
-        background: isSelected ? C.accentLight : C.bg,
-        border: `1px solid ${isSelected ? C.border : C.borderLight}`,
-        overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
-      }}>
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-2.5 px-3 py-2 border text-left transition-all duration-150 shrink-0 rounded-none",
+        mobile ? "w-full" : "min-w-[220px]",
+        isSelected
+          ? "border-foreground bg-foreground"
+          : "border-border bg-transparent hover:border-brand/40"
+      )}
+    >
+      <div
+        className={cn(
+          "w-9 h-9 shrink-0 border overflow-hidden flex items-center justify-center",
+          isSelected ? "bg-brand/10 border-border" : "bg-background border-border/40"
+        )}
+      >
         {property.photo_url ? (
-          <img src={property.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img src={property.photo_url} alt="" className="w-full h-full object-cover" />
         ) : (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isSelected ? C.bg : C.textFaint} strokeWidth="1.5">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            className={isSelected ? "text-background" : "text-muted-foreground/40"}
+          >
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
             <polyline points="9 22 9 12 15 12 15 22" />
           </svg>
         )}
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontFamily: fonts.serif, fontSize: 13, color: isSelected ? C.bg : C.text,
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        }}>
+      <div className="flex-1 min-w-0">
+        <div
+          className={cn(
+            "font-serif text-[13px] overflow-hidden text-ellipsis whitespace-nowrap",
+            isSelected ? "text-background" : "text-foreground"
+          )}
+        >
           {property.name}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-          <span style={{
-            fontSize: 8, fontFamily: fonts.sans, fontWeight: 700, textTransform: "uppercase",
-            letterSpacing: "0.08em", padding: "1px 5px",
-            background: isSelected ? C.accentLight : (isRent ? C.accentLight : C.greenBg),
-            color: isSelected ? C.bg : (isRent ? C.accent : C.green),
-          }}>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span
+            className={cn(
+              "text-[8px] font-bold uppercase tracking-[0.08em] px-1.5 py-px",
+              isSelected
+                ? "bg-brand/20 text-background"
+                : isRent
+                  ? "bg-brand/10 text-brand"
+                  : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+            )}
+          >
             {isRent ? "Rent" : "Buy"}
           </span>
-          <span style={{
-            fontFamily: fonts.sans, fontSize: 10,
-            color: isSelected ? C.bg : C.textLight,
-          }}>
+          <span
+            className={cn(
+              "text-[10px]",
+              isSelected ? "text-background/70" : "text-muted-foreground"
+            )}
+          >
             {property.price ? (isRent ? `${fmt(property.price)}/mo` : fmt(property.price)) : "No price"}
           </span>
         </div>
       </div>
       {isSelected && (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.bg} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="text-background"
+        >
           <polyline points="20 6 9 17 4 12" />
         </svg>
       )}
@@ -112,23 +144,31 @@ function PropertyCard({ property, isSelected, onClick, mobile }) {
 function BudgetBar({ actual, suggested, label }) {
   if (!suggested || suggested <= 0) return null;
   const ratio = actual / suggested;
-  const barColor = ratio > 1.5 ? C.red : ratio > 1.2 ? C.accent : C.green;
   const pct = Math.min(ratio * 100, 200);
+  const barColorClass = ratio > 1.5
+    ? "bg-red-500"
+    : ratio > 1.2
+      ? "bg-amber-500"
+      : "bg-green-500";
+  const textColorClass = ratio > 1.5
+    ? "text-red-500"
+    : ratio > 1.2
+      ? "text-amber-500"
+      : "text-green-600";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-      <span style={{
-        fontSize: 9, color: C.textLight, fontFamily: fonts.sans, width: 70,
-        textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, flexShrink: 0,
-      }}>{label}</span>
-      <div style={{ flex: 1, height: 6, background: C.borderLight, position: "relative" }}>
-        <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: barColor, transition: "width 0.3s" }} />
+    <div className="flex items-center gap-2.5 mb-1.5">
+      <span className="text-[9px] text-muted-foreground w-[70px] uppercase tracking-[0.06em] font-semibold shrink-0">
+        {label}
+      </span>
+      <div className="flex-1 h-1.5 bg-border/50 relative">
+        <div
+          className={cn("h-full transition-[width] duration-300", barColorClass)}
+          style={{ width: `${Math.min(pct, 100)}%` }}
+        />
         {/* Suggested marker line at 100% */}
-        <div style={{ position: "absolute", left: "50%", top: -2, bottom: -2, width: 1.5, background: C.textFaint }} />
+        <div className="absolute left-1/2 -top-0.5 -bottom-0.5 w-px bg-muted-foreground/30" />
       </div>
-      <span style={{
-        fontSize: 10, color: barColor, fontFamily: fonts.sans, fontWeight: 600,
-        minWidth: 35, textAlign: "right",
-      }}>
+      <span className={cn("text-[10px] font-semibold min-w-[35px] text-right", textColorClass)}>
         {Math.round(ratio * 100)}%
       </span>
     </div>
@@ -136,13 +176,13 @@ function BudgetBar({ actual, suggested, label }) {
 }
 
 function CategoryFields({ items, labels, state, onChange, prefix = "£", suffix, mobile }) {
-  const grid = {
-    display: "grid",
-    gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill, minmax(155px, 1fr))",
-    gap: mobile ? "16px" : "20px 32px",
-  };
   return (
-    <div style={grid}>
+    <div className={cn(
+      "grid",
+      mobile
+        ? "grid-cols-1 gap-4"
+        : "grid-cols-[repeat(auto-fill,minmax(155px,1fr))] gap-x-8 gap-y-5"
+    )}>
       {items.map((key) => (
         <Field
           key={key}
@@ -164,33 +204,32 @@ function ComparisonTable({ primary, compare, mobile }) {
     { label: "Disposable", a: fmt(primary.disposable), b: fmt(compare.disposable), delta: compare.disposable - primary.disposable, isMoney: true },
     { label: "Savings Rate", a: `${primary.savingsRate.toFixed(1)}%`, b: `${compare.savingsRate.toFixed(1)}%`, delta: compare.savingsRate - primary.savingsRate, suffix: "pp" },
   ];
-  const cellStyle = { padding: "10px 12px", fontFamily: fonts.serif, fontSize: 14, color: C.text };
-  const headerStyle = { ...cellStyle, fontSize: 9, fontFamily: fonts.sans, fontWeight: 600, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.08em" };
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse">
         <thead>
-          <tr style={{ borderBottom: `1.5px solid ${C.border}` }}>
-            <th style={headerStyle}></th>
-            <th style={headerStyle}>Current</th>
-            <th style={headerStyle}>Compare</th>
-            <th style={headerStyle}>Delta</th>
+          <tr className="border-b-2 border-border">
+            <th className="p-3 text-[9px] font-semibold text-muted-foreground uppercase tracking-[0.08em] text-left"></th>
+            <th className="p-3 text-[9px] font-semibold text-muted-foreground uppercase tracking-[0.08em] text-left">Current</th>
+            <th className="p-3 text-[9px] font-semibold text-muted-foreground uppercase tracking-[0.08em] text-left">Compare</th>
+            <th className="p-3 text-[9px] font-semibold text-muted-foreground uppercase tracking-[0.08em] text-left">Delta</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => {
-            const deltaColor = r.label === "Housing Cost" || r.label === "Housing %"
-              ? (r.delta > 0 ? C.red : r.delta < 0 ? C.green : C.textMid)
-              : (r.delta < 0 ? C.red : r.delta > 0 ? C.green : C.textMid);
+            const isHousingMetric = r.label === "Housing Cost" || r.label === "Housing %";
+            const deltaColorClass = isHousingMetric
+              ? r.delta > 0 ? "text-red-500" : r.delta < 0 ? "text-green-600" : "text-muted-foreground"
+              : r.delta < 0 ? "text-red-500" : r.delta > 0 ? "text-green-600" : "text-muted-foreground";
             const deltaStr = r.isMoney
               ? `${r.delta >= 0 ? "+" : ""}${fmt(r.delta)}`
               : `${r.delta >= 0 ? "+" : ""}${r.delta.toFixed(1)}${r.suffix || ""}`;
             return (
-              <tr key={r.label} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
-                <td style={{ ...cellStyle, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, color: C.textMid }}>{r.label}</td>
-                <td style={cellStyle}>{r.a}</td>
-                <td style={cellStyle}>{r.b}</td>
-                <td style={{ ...cellStyle, color: deltaColor, fontWeight: 500 }}>{deltaStr}</td>
+              <tr key={r.label} className="border-b border-border/50">
+                <td className="p-3 text-[11px] font-semibold text-muted-foreground">{r.label}</td>
+                <td className="p-3 font-serif text-sm text-foreground">{r.a}</td>
+                <td className="p-3 font-serif text-sm text-foreground">{r.b}</td>
+                <td className={cn("p-3 font-serif text-sm font-medium", deltaColorClass)}>{deltaStr}</td>
               </tr>
             );
           })}
@@ -522,92 +561,103 @@ export default function FinanceTracker() {
   // ── Auth guard ──
   if (!user) {
     return (
-      <div style={{ textAlign: "center", padding: "80px 20px" }}>
-        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, marginBottom: 12 }}>Personal Finance Tracker</h2>
-        <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic" }}>Sign in to track your budget against properties.</p>
+      <div className="text-center py-20 px-5">
+        <h2 className="font-serif font-normal text-foreground mb-3 text-xl">Personal Finance Tracker</h2>
+        <p className="font-serif text-muted-foreground italic">Sign in to track your budget against properties.</p>
       </div>
     );
   }
 
-  // ── Threshold colours ──
+  // ── Threshold variants ──
   const housingThreshold = getThreshold(summary.housingPct, HOUSING_THRESHOLDS);
   const savingsThreshold = getThreshold(summary.savingsRate, SAVINGS_THRESHOLDS);
 
-  // ── Grid style ──
-  const grid = {
-    display: "grid",
-    gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill, minmax(155px, 1fr))",
-    gap: mobile ? "16px" : "20px 32px",
-  };
-
-  const selectStyle = {
-    border: `1.5px solid ${C.border}`, background: "transparent", padding: "8px 12px",
-    fontFamily: fonts.serif, fontSize: 16, color: C.text, outline: "none",
-    cursor: "pointer", width: "100%",
-  };
+  const gridClass = cn(
+    "grid",
+    mobile
+      ? "grid-cols-1 gap-4"
+      : "grid-cols-[repeat(auto-fill,minmax(155px,1fr))] gap-x-8 gap-y-5"
+  );
 
   return (
     <div>
       {/* ── Page Header ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
-        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, margin: 0, fontSize: mobile ? 20 : 22 }}>
+      <div className="flex justify-between items-center mb-8">
+        <h2 className={cn("font-serif font-normal text-foreground m-0", mobile ? "text-xl" : "text-[22px]")}>
           Personal Finance Tracker
         </h2>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div className="flex gap-2 items-center">
           <Toggle label={annualView ? "Annual" : "Monthly"} value={annualView} onChange={setAnnualView} />
-          <button onClick={exportCSV} style={{
-            padding: "7px 14px", border: `1.5px solid ${C.border}`, background: "transparent",
-            fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.textMid,
-            cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em",
-          }}>Export CSV</button>
+          <Button variant="outline" size="sm" onClick={exportCSV} className="text-[10px] uppercase tracking-wider">
+            Export CSV
+          </Button>
         </div>
       </div>
 
       {/* ── Property Selector ── */}
       <Section title="SELECT PROPERTY" canSave={!!user} onSave={() => setSaveDialog(true)} onLoad={() => setLoadDialog(true)}>
-        {loading && <div style={{ fontSize: 13, color: C.textLight, fontFamily: fonts.serif }}>Loading properties...</div>}
+        {loading && (
+          <div className="text-sm text-muted-foreground font-serif">Loading properties...</div>
+        )}
         {!loading && properties.length === 0 && (
           <SummaryBar>No properties yet. Add some in Gaff Tracker first.</SummaryBar>
         )}
         {!loading && properties.length > 0 && (
-          <div style={{
-            display: "flex", flexDirection: mobile ? "column" : "row",
-            gap: 6, overflowX: mobile ? "visible" : "auto", paddingBottom: 4,
-          }}>
+          <div className={cn(
+            "flex gap-1.5 pb-1",
+            mobile ? "flex-col" : "flex-row overflow-x-auto"
+          )}>
             {properties.map((p) => (
-              <PropertyCard key={p.id} property={p} isSelected={selectedPropertyId === p.id} onClick={() => handleSelectProperty(p)} mobile={mobile} />
+              <PropertyCard
+                key={p.id}
+                property={p}
+                isSelected={selectedPropertyId === p.id}
+                onClick={() => handleSelectProperty(p)}
+                mobile={mobile}
+              />
             ))}
           </div>
         )}
 
         {/* Buy scenario picker */}
         {selectedProperty?.listing_type === "buy" && (
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: C.accent, fontWeight: 600, fontFamily: fonts.sans, marginBottom: 8 }}>
+          <div className="mt-4">
+            <div className="text-[9px] font-bold uppercase tracking-[0.22em] text-brand mb-2">
               Buy Scenario (for mortgage calc)
             </div>
             {buyScenarios.length === 0 ? (
               <SummaryBar>No buy scenarios saved. Create one in Buy Scenario first.</SummaryBar>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 5, maxWidth: 350 }}>
+              <div className="flex flex-col gap-1.5 max-w-[350px]">
                 {buyScenarios.map((s) => {
                   const isSel = selectedScenarioId === s.id;
                   return (
-                    <button key={s.id} onClick={() => setSelectedScenarioId(isSel ? null : s.id)} style={{
-                      display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
-                      border: `1.5px solid ${isSel ? C.text : C.border}`, background: isSel ? C.text : "transparent",
-                      cursor: "pointer", textAlign: "left", transition: "all 0.15s",
-                    }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: fonts.serif, fontSize: 13, color: isSel ? C.bg : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <button
+                      key={s.id}
+                      onClick={() => setSelectedScenarioId(isSel ? null : s.id)}
+                      className={cn(
+                        "flex items-center gap-2.5 px-3 py-2 border text-left transition-all duration-150 rounded-none",
+                        isSel
+                          ? "border-foreground bg-foreground"
+                          : "border-border bg-transparent hover:border-brand/40"
+                      )}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className={cn(
+                          "font-serif text-[13px] overflow-hidden text-ellipsis whitespace-nowrap",
+                          isSel ? "text-background" : "text-foreground"
+                        )}>
                           {s.config?.propertyName || s.name}
                         </div>
-                        <div style={{ fontFamily: fonts.sans, fontSize: 10, color: isSel ? "rgba(255,255,255,0.45)" : C.textLight, marginTop: 1 }}>
+                        <div className={cn(
+                          "text-[10px] mt-px",
+                          isSel ? "text-background/45" : "text-muted-foreground"
+                        )}>
                           {s.name}
                         </div>
                       </div>
                       {isSel && (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.bg} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-background">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
                       )}
@@ -622,21 +672,22 @@ export default function FinanceTracker() {
 
       {/* ── Income ── */}
       <Section title="INCOME">
-        <div style={{ maxWidth: 240 }}>
+        <div className="max-w-[240px]">
           <Field label="Net Monthly Income" value={monthlyIncome} onChange={setMonthlyIncome} prefix="£" />
         </div>
       </Section>
 
       {/* ── Budget Settings ── */}
       <Section title="BUDGET SETTINGS">
-        <div style={{ fontSize: 11, fontFamily: fonts.sans, color: C.textMid, marginBottom: 16 }}>
+        <div className="text-[11px] text-muted-foreground mb-4">
           Suggested spend targets as % of post-housing income. Total: {Object.values(ratios).reduce((s, v) => s + (Number(v) || 0), 0)}%
         </div>
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(6, 1fr)",
-          gap: mobile ? "16px" : "20px 32px",
-        }}>
+        <div className={cn(
+          "grid",
+          mobile
+            ? "grid-cols-2 gap-4"
+            : "grid-cols-6 gap-x-8 gap-y-5"
+        )}>
           {[
             ["utilities", "Utilities"],
             ["transport", "Transport"],
@@ -648,32 +699,47 @@ export default function FinanceTracker() {
             <Field key={key} label={label} value={ratios[key]} onChange={(v) => updateRatio(key, v)} suffix="%" />
           ))}
         </div>
-        <button onClick={() => setRatios({ ...DEFAULT_RATIOS })} style={{
-          marginTop: 12, background: "none", border: "none", color: C.accent,
-          fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, cursor: "pointer", padding: 0,
-          textTransform: "uppercase", letterSpacing: "0.06em",
-        }}>Reset to defaults</button>
+        <button
+          onClick={() => setRatios({ ...DEFAULT_RATIOS })}
+          className="mt-3 bg-transparent border-none text-brand text-[10px] font-semibold cursor-pointer p-0 uppercase tracking-[0.06em] hover:opacity-70 transition-opacity"
+        >
+          Reset to defaults
+        </button>
       </Section>
 
       {/* ── Dashboard Cards ── */}
       {selectedProperty && (
-        <div style={{
-          display: "flex", flexWrap: "wrap", gap: mobile ? 20 : 32,
-          padding: "20px 0", marginBottom: 12, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`,
-        }}>
-          <Stat label={annualView ? "Annual Expenses" : "Monthly Expenses"} value={fmt(Math.round(summary.totalExpenses * mul))} sub={`of ${fmt(monthlyIncome * mul)} income`} mobile={mobile} />
+        <div className={cn(
+          "flex flex-wrap py-5 mb-3 border-t border-b border-border",
+          mobile ? "gap-5" : "gap-8"
+        )}>
+          <Stat
+            label={annualView ? "Annual Expenses" : "Monthly Expenses"}
+            value={fmt(Math.round(summary.totalExpenses * mul))}
+            sub={`of ${fmt(monthlyIncome * mul)} income`}
+            mobile={mobile}
+          />
           <Stat
             label="Housing %"
             value={`${summary.housingPct.toFixed(1)}%`}
-            sub={<span style={{ color: housingThreshold.color, fontStyle: "normal", fontWeight: 600, fontFamily: fonts.sans, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>{housingThreshold.label}</span>}
+            sub={<Badge variant={housingThreshold.variant}>{housingThreshold.label}</Badge>}
             mobile={mobile}
           />
-          <Stat label="Disposable" value={fmt(Math.round(summary.disposable * mul))} sub={summary.disposable >= 0 ? "surplus" : "deficit"} mobile={mobile} />
-          <Stat label={annualView ? "Annual Savings" : "Monthly Savings"} value={fmt(Math.round(summary.savingsItems * mul))} mobile={mobile} />
+          <Stat
+            label="Disposable"
+            value={fmt(Math.round(summary.disposable * mul))}
+            sub={summary.disposable >= 0 ? "surplus" : "deficit"}
+            mobile={mobile}
+          />
+          <Stat
+            label={annualView ? "Annual Savings" : "Monthly Savings"}
+            value={fmt(Math.round(summary.savingsItems * mul))}
+            mobile={mobile}
+          />
           <Stat
             label="Savings Rate"
             value={`${summary.savingsRate.toFixed(1)}%`}
-            sub={<span style={{ color: savingsThreshold.color, fontStyle: "normal", fontWeight: 600, fontFamily: fonts.sans, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>{savingsThreshold.label}</span>}
+            sub={<Badge variant={savingsThreshold.variant}>{savingsThreshold.label}</Badge>}
             mobile={mobile}
           />
         </div>
@@ -685,7 +751,7 @@ export default function FinanceTracker() {
           <SummaryBar>Select a property above to auto-fill housing costs.</SummaryBar>
         ) : (
           <>
-            <div style={grid}>
+            <div className={gridClass}>
               {Object.keys(housingLabels).map((key) => (
                 <div key={key}>
                   <Field
@@ -696,27 +762,34 @@ export default function FinanceTracker() {
                     note={housingOverrides[key] != null ? "overridden" : undefined}
                   />
                   {housingOverrides[key] != null && (
-                    <button onClick={() => setHousingOverrides((prev) => { const n = { ...prev }; delete n[key]; return n; })} style={{
-                      background: "none", border: "none", color: C.accent, fontSize: 10,
-                      fontFamily: fonts.sans, cursor: "pointer", padding: "4px 0", fontWeight: 600,
-                    }}>Reset to auto ({fmt(housingCosts.autoValues[key] || 0)})</button>
+                    <button
+                      onClick={() => setHousingOverrides((prev) => { const n = { ...prev }; delete n[key]; return n; })}
+                      className="bg-transparent border-none text-brand text-[10px] cursor-pointer py-1 px-0 font-semibold hover:opacity-70 transition-opacity"
+                    >
+                      Reset to auto ({fmt(housingCosts.autoValues[key] || 0)})
+                    </button>
                   )}
                 </div>
               ))}
               {/* Council tax band selector */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <label style={{ fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.textLight, letterSpacing: "0.12em", textTransform: "uppercase" }}>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                   Council Tax Band
                 </label>
-                <select value={councilTaxBand} onChange={(e) => setCouncilTaxBand(e.target.value)} style={selectStyle}>
+                <select
+                  value={councilTaxBand}
+                  onChange={(e) => setCouncilTaxBand(e.target.value)}
+                  className="border border-border bg-transparent px-3 py-2 font-serif text-base text-foreground outline-none cursor-pointer w-full"
+                >
                   {Object.entries(COUNCIL_TAX).map(([band, val]) => (
                     <option key={band} value={band}>Band {band} — {fmt(val)}/mo</option>
                   ))}
                 </select>
               </div>
             </div>
-            <div style={{ marginTop: 16, fontFamily: fonts.serif, fontSize: 14, color: C.textMid }}>
-              Total housing: <span style={{ color: C.text, fontWeight: 500 }}>{fmt(housingCosts.total * mul)}{per}</span>
+            <div className="mt-4 font-serif text-sm text-muted-foreground">
+              Total housing:{" "}
+              <span className="text-foreground font-medium">{fmt(housingCosts.total * mul)}{per}</span>
             </div>
           </>
         )}
@@ -725,91 +798,127 @@ export default function FinanceTracker() {
       {/* ── Utilities ── */}
       <Section title="UTILITIES">
         <CategoryFields items={Object.keys(utilities)} labels={utilityLabels} state={utilities} onChange={updateCat(setUtilities)} mobile={mobile} />
-        <div style={{ marginTop: 16, fontFamily: fonts.serif, fontSize: 14, color: C.textMid }}>
-          Total: <span style={{ color: C.text, fontWeight: 500 }}>{fmt(categoryTotals.utilities * mul)}{per}</span>
-          {suggested && <span style={{ marginLeft: 12, fontSize: 12, color: C.textLight }}>Suggested: ~{fmt(Math.round(suggested.utilities * mul))}</span>}
+        <div className="mt-4 font-serif text-sm text-muted-foreground">
+          Total: <span className="text-foreground font-medium">{fmt(categoryTotals.utilities * mul)}{per}</span>
+          {suggested && (
+            <span className="ml-3 text-xs text-muted-foreground/70">
+              Suggested: ~{fmt(Math.round(suggested.utilities * mul))}
+            </span>
+          )}
         </div>
       </Section>
 
       {/* ── Transport ── */}
       <Section title="TRANSPORT">
         {commuteSuggestion && (
-          <div style={{ marginBottom: 16, padding: "12px 14px", background: C.accentLight, border: `1px solid rgba(184,134,11,0.2)` }}>
-            <div style={{ fontSize: 10, fontFamily: fonts.sans, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+          <div className="mb-4 px-3.5 py-3 bg-brand/5 border border-brand/20">
+            <div className="text-[10px] font-bold text-brand uppercase tracking-[0.08em] mb-2.5">
               Commute data from {selectedProperty.name}
-              {commuteSuggestion.distance > 0 && <span style={{ fontWeight: 400, color: C.textMid }}> · {commuteSuggestion.distance} miles</span>}
+              {commuteSuggestion.distance > 0 && (
+                <span className="font-normal text-muted-foreground"> · {commuteSuggestion.distance} miles</span>
+              )}
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
-              <div style={{ width: 110 }}>
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="w-[110px]">
                 <Field label="Days/week" value={commuteDays} onChange={setCommuteDays} />
               </div>
               {commuteSuggestion.carMonthly != null && (
                 <div>
-                  <div style={{ fontSize: 10, fontFamily: fonts.sans, color: C.textMid, marginBottom: 4 }}>Car: ~{fmt(commuteSuggestion.carMonthly)}/mo</div>
-                  <button onClick={() => setTransport((t) => ({ ...t, fuel: commuteSuggestion.carMonthly }))} style={{ padding: "5px 12px", border: `1.5px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, cursor: "pointer", textTransform: "uppercase" }}>
+                  <div className="text-[10px] text-muted-foreground mb-1">Car: ~{fmt(commuteSuggestion.carMonthly)}/mo</div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setTransport((t) => ({ ...t, fuel: commuteSuggestion.carMonthly }))}
+                    className="text-[10px] uppercase border-brand text-brand hover:bg-brand/5"
+                  >
                     Apply to fuel
-                  </button>
+                  </Button>
                 </div>
               )}
               {commuteSuggestion.transportMonthly != null && (
                 <div>
-                  <div style={{ fontSize: 10, fontFamily: fonts.sans, color: C.textMid, marginBottom: 4 }}>Public transport: ~{fmt(commuteSuggestion.transportMonthly)}/mo</div>
-                  <button onClick={() => setTransport((t) => ({ ...t, publicTransport: commuteSuggestion.transportMonthly }))} style={{ padding: "5px 12px", border: `1.5px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, cursor: "pointer", textTransform: "uppercase" }}>
+                  <div className="text-[10px] text-muted-foreground mb-1">Public transport: ~{fmt(commuteSuggestion.transportMonthly)}/mo</div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setTransport((t) => ({ ...t, publicTransport: commuteSuggestion.transportMonthly }))}
+                    className="text-[10px] uppercase border-brand text-brand hover:bg-brand/5"
+                  >
                     Apply to public transport
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
           </div>
         )}
         <CategoryFields items={Object.keys(transport)} labels={transportLabels} state={transport} onChange={updateCat(setTransport)} mobile={mobile} />
-        <div style={{ marginTop: 16, fontFamily: fonts.serif, fontSize: 14, color: C.textMid }}>
-          Total: <span style={{ color: C.text, fontWeight: 500 }}>{fmt(categoryTotals.transport * mul)}{per}</span>
-          {suggested && <span style={{ marginLeft: 12, fontSize: 12, color: C.textLight }}>Suggested: ~{fmt(Math.round(suggested.transport * mul))}</span>}
+        <div className="mt-4 font-serif text-sm text-muted-foreground">
+          Total: <span className="text-foreground font-medium">{fmt(categoryTotals.transport * mul)}{per}</span>
+          {suggested && (
+            <span className="ml-3 text-xs text-muted-foreground/70">
+              Suggested: ~{fmt(Math.round(suggested.transport * mul))}
+            </span>
+          )}
         </div>
       </Section>
 
       {/* ── Food & Drink ── */}
       <Section title="FOOD & DRINK">
         <CategoryFields items={Object.keys(food)} labels={foodLabels} state={food} onChange={updateCat(setFood)} mobile={mobile} />
-        <div style={{ marginTop: 16, fontFamily: fonts.serif, fontSize: 14, color: C.textMid }}>
-          Total: <span style={{ color: C.text, fontWeight: 500 }}>{fmt(categoryTotals.food * mul)}{per}</span>
-          {suggested && <span style={{ marginLeft: 12, fontSize: 12, color: C.textLight }}>Suggested: ~{fmt(Math.round(suggested.food * mul))}</span>}
+        <div className="mt-4 font-serif text-sm text-muted-foreground">
+          Total: <span className="text-foreground font-medium">{fmt(categoryTotals.food * mul)}{per}</span>
+          {suggested && (
+            <span className="ml-3 text-xs text-muted-foreground/70">
+              Suggested: ~{fmt(Math.round(suggested.food * mul))}
+            </span>
+          )}
         </div>
       </Section>
 
       {/* ── Lifestyle ── */}
       <Section title="LIFESTYLE">
         <CategoryFields items={Object.keys(lifestyle)} labels={lifestyleLabels} state={lifestyle} onChange={updateCat(setLifestyle)} mobile={mobile} />
-        <div style={{ marginTop: 16, fontFamily: fonts.serif, fontSize: 14, color: C.textMid }}>
-          Total: <span style={{ color: C.text, fontWeight: 500 }}>{fmt(categoryTotals.lifestyle * mul)}{per}</span>
-          {suggested && <span style={{ marginLeft: 12, fontSize: 12, color: C.textLight }}>Suggested: ~{fmt(Math.round(suggested.lifestyle * mul))}</span>}
+        <div className="mt-4 font-serif text-sm text-muted-foreground">
+          Total: <span className="text-foreground font-medium">{fmt(categoryTotals.lifestyle * mul)}{per}</span>
+          {suggested && (
+            <span className="ml-3 text-xs text-muted-foreground/70">
+              Suggested: ~{fmt(Math.round(suggested.lifestyle * mul))}
+            </span>
+          )}
         </div>
       </Section>
 
       {/* ── Financial ── */}
       <Section title="SAVINGS & DEBT">
         <CategoryFields items={Object.keys(financial)} labels={financialLabels} state={financial} onChange={updateCat(setFinancial)} mobile={mobile} />
-        <div style={{ marginTop: 16, fontFamily: fonts.serif, fontSize: 14, color: C.textMid }}>
-          Total: <span style={{ color: C.text, fontWeight: 500 }}>{fmt(categoryTotals.financial * mul)}{per}</span>
-          {suggested && <span style={{ marginLeft: 12, fontSize: 12, color: C.textLight }}>Suggested: ~{fmt(Math.round(suggested.financial * mul))}</span>}
+        <div className="mt-4 font-serif text-sm text-muted-foreground">
+          Total: <span className="text-foreground font-medium">{fmt(categoryTotals.financial * mul)}{per}</span>
+          {suggested && (
+            <span className="ml-3 text-xs text-muted-foreground/70">
+              Suggested: ~{fmt(Math.round(suggested.financial * mul))}
+            </span>
+          )}
         </div>
       </Section>
 
       {/* ── Irregular ── */}
       <Section title="IRREGULAR (MONTHLY AMORTISED)">
         <CategoryFields items={Object.keys(irregular)} labels={irregularLabels} state={irregular} onChange={updateCat(setIrregular)} mobile={mobile} />
-        <div style={{ marginTop: 16, fontFamily: fonts.serif, fontSize: 14, color: C.textMid }}>
-          Total: <span style={{ color: C.text, fontWeight: 500 }}>{fmt(categoryTotals.irregular * mul)}{per}</span>
-          {suggested && <span style={{ marginLeft: 12, fontSize: 12, color: C.textLight }}>Suggested: ~{fmt(Math.round(suggested.irregular * mul))}</span>}
+        <div className="mt-4 font-serif text-sm text-muted-foreground">
+          Total: <span className="text-foreground font-medium">{fmt(categoryTotals.irregular * mul)}{per}</span>
+          {suggested && (
+            <span className="ml-3 text-xs text-muted-foreground/70">
+              Suggested: ~{fmt(Math.round(suggested.irregular * mul))}
+            </span>
+          )}
         </div>
       </Section>
 
       {/* ── Budget Summary ── */}
       <Section title="BUDGET SUMMARY" defaultOpen>
         {suggested && (
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 11, fontFamily: fonts.sans, color: C.textMid, marginBottom: 12 }}>
+          <div className="mb-5">
+            <div className="text-[11px] text-muted-foreground mb-3">
               Actual vs suggested spend (line marks the suggested amount)
             </div>
             <BudgetBar actual={categoryTotals.utilities} suggested={suggested.utilities} label="Utilities" />
@@ -821,23 +930,30 @@ export default function FinanceTracker() {
           </div>
         )}
 
-        <div style={{
-          display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr 1fr",
-          gap: 16, padding: "16px 0", borderTop: `1px solid ${C.border}`,
-        }}>
+        <div className={cn(
+          "grid gap-4 pt-4 border-t border-border",
+          mobile ? "grid-cols-1" : "grid-cols-3"
+        )}>
           <div>
-            <div style={{ fontSize: 10, fontFamily: fonts.sans, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginBottom: 6 }}>Total In {per}</div>
-            <div style={{ fontSize: 22, fontFamily: fonts.serif, color: C.green }}>{fmt(monthlyIncome * mul)}</div>
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.08em] mb-1.5">
+              Total In {per}
+            </div>
+            <div className="text-[22px] font-serif text-green-600">{fmt(monthlyIncome * mul)}</div>
           </div>
           <div>
-            <div style={{ fontSize: 10, fontFamily: fonts.sans, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginBottom: 6 }}>Total Out {per}</div>
-            <div style={{ fontSize: 22, fontFamily: fonts.serif, color: C.text }}>{fmt(Math.round(summary.totalExpenses * mul))}</div>
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.08em] mb-1.5">
+              Total Out {per}
+            </div>
+            <div className="text-[22px] font-serif text-foreground">{fmt(Math.round(summary.totalExpenses * mul))}</div>
           </div>
           <div>
-            <div style={{ fontSize: 10, fontFamily: fonts.sans, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginBottom: 6 }}>
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.08em] mb-1.5">
               {summary.disposable >= 0 ? "Surplus" : "Deficit"} {per}
             </div>
-            <div style={{ fontSize: 22, fontFamily: fonts.serif, color: summary.disposable >= 0 ? C.green : C.red }}>
+            <div className={cn(
+              "text-[22px] font-serif",
+              summary.disposable >= 0 ? "text-green-600" : "text-red-500"
+            )}>
               {fmt(Math.round(Math.abs(summary.disposable) * mul))}
             </div>
           </div>
@@ -846,18 +962,21 @@ export default function FinanceTracker() {
 
       {/* ── Savings Projection ── */}
       <Section title="SAVINGS PROJECTION">
-        <div style={{ display: "flex", flexWrap: "wrap", gap: mobile ? 16 : 32, marginBottom: 8 }}>
-          <div style={{ width: 155 }}>
+        <div className={cn(
+          "flex flex-wrap mb-2",
+          mobile ? "gap-4" : "gap-8"
+        )}>
+          <div className="w-[155px]">
             <Field label="Return Rate" value={investReturnRate} onChange={setInvestReturnRate} suffix="% p.a." />
           </div>
-          <div style={{ width: 155 }}>
+          <div className="w-[155px]">
             <Field label="Projection" value={projectionYears} onChange={setProjectionYears} suffix="years" />
           </div>
-          <div style={{ width: 155 }}>
+          <div className="w-[155px]">
             <Field label="Assumed Inflation" value={inflationRate} onChange={setInflationRate} suffix="% p.a." tip="Bank of England target is 2%. Used to calculate real (today's money) values." />
           </div>
         </div>
-        <div style={{ marginBottom: 16 }}>
+        <div className="mb-4">
           <Toggle
             label="Show in today's money (inflation-adjusted)"
             value={inflationAdjusted}
@@ -869,7 +988,7 @@ export default function FinanceTracker() {
           <InteractiveChart
             data={displayProjectionData}
             keys={["emergency", "investments"]}
-            colors={[C.accent, C.green]}
+            colors={["var(--warning)", "var(--success)"]}
             labels={["Emergency Fund", "Investments"]}
             title="Projected Growth"
             mobile={mobile}
@@ -884,45 +1003,61 @@ export default function FinanceTracker() {
 
       {/* ── Comparison Mode ── */}
       <Section title="PROPERTY COMPARISON" defaultOpen={compareMode}>
-        <div style={{ marginBottom: 16 }}>
+        <div className="mb-4">
           <Toggle label="Compare with another property" value={compareMode} onChange={setCompareMode} />
         </div>
 
         {compareMode && (
           <>
-            <div style={{
-              display: "flex", flexDirection: mobile ? "column" : "row",
-              gap: 6, overflowX: mobile ? "visible" : "auto", paddingBottom: 8, marginBottom: 16,
-            }}>
+            <div className={cn(
+              "flex gap-1.5 pb-2 mb-4",
+              mobile ? "flex-col" : "flex-row overflow-x-auto"
+            )}>
               {properties.filter((p) => p.id !== selectedPropertyId).map((p) => (
-                <PropertyCard key={p.id} property={p} isSelected={comparePropertyId === p.id} onClick={() => {
-                  setComparePropertyId(comparePropertyId === p.id ? null : p.id);
-                  if (p.listing_type === "buy" && buyScenarios.length > 0) setCompareScenarioId(buyScenarios[0].id);
-                  else setCompareScenarioId(null);
-                }} mobile={mobile} />
+                <PropertyCard
+                  key={p.id}
+                  property={p}
+                  isSelected={comparePropertyId === p.id}
+                  onClick={() => {
+                    setComparePropertyId(comparePropertyId === p.id ? null : p.id);
+                    if (p.listing_type === "buy" && buyScenarios.length > 0) setCompareScenarioId(buyScenarios[0].id);
+                    else setCompareScenarioId(null);
+                  }}
+                  mobile={mobile}
+                />
               ))}
             </div>
 
             {/* Buy scenario picker for compare property */}
             {compareProperty?.listing_type === "buy" && buyScenarios.length > 0 && (
-              <div style={{ marginBottom: 16, maxWidth: 350 }}>
-                <div style={{ fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: C.accent, fontWeight: 600, fontFamily: fonts.sans, marginBottom: 8 }}>
+              <div className="mb-4 max-w-[350px]">
+                <div className="text-[9px] font-bold uppercase tracking-[0.22em] text-brand mb-2">
                   Compare Buy Scenario
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <div className="flex flex-col gap-1.5">
                   {buyScenarios.map((s) => {
                     const isSel = compareScenarioId === s.id;
                     return (
-                      <button key={s.id} onClick={() => setCompareScenarioId(isSel ? null : s.id)} style={{
-                        display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
-                        border: `1.5px solid ${isSel ? C.text : C.border}`, background: isSel ? C.text : "transparent",
-                        cursor: "pointer", textAlign: "left", transition: "all 0.15s",
-                      }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontFamily: fonts.serif, fontSize: 13, color: isSel ? C.bg : C.text }}>{s.config?.propertyName || s.name}</div>
+                      <button
+                        key={s.id}
+                        onClick={() => setCompareScenarioId(isSel ? null : s.id)}
+                        className={cn(
+                          "flex items-center gap-2.5 px-3 py-2 border text-left transition-all duration-150 rounded-none",
+                          isSel
+                            ? "border-foreground bg-foreground"
+                            : "border-border bg-transparent hover:border-brand/40"
+                        )}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className={cn(
+                            "font-serif text-[13px]",
+                            isSel ? "text-background" : "text-foreground"
+                          )}>
+                            {s.config?.propertyName || s.name}
+                          </div>
                         </div>
                         {isSel && (
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.bg} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-background">
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
                         )}
@@ -944,7 +1079,7 @@ export default function FinanceTracker() {
       </Section>
 
       {/* ── Footer ── */}
-      <div style={{ textAlign: "center", padding: "24px 0 48px", fontSize: 11, fontFamily: fonts.sans, color: C.textFaint }}>
+      <div className="text-center py-6 pb-12 text-[11px] text-muted-foreground/50">
         Defaults based on typical young professional spending in a major city. Adjust to match your actual spending.
       </div>
 

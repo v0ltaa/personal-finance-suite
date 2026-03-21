@@ -1,11 +1,15 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { C, fonts, fmt } from "../lib/tokens";
+import { fmt } from "../lib/tokens";
 import { useAuth } from "../lib/hooks";
 import {
   loadProperties, loadCustomFields,
   saveLandmarks, getLandmarks,
   getWorkplaceAddress,
 } from "../lib/supabase";
+import { cn } from "../lib/utils";
+import { Button } from "../components/ui/button";
+import { Select } from "../components/ui/select";
+import { Input } from "../components/ui/input";
 
 const GMAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
@@ -133,12 +137,6 @@ const LANDMARK_ICONS = [
   { value: "⭐", label: "Favourite" },
 ];
 
-// ─── Shared input style ────────────────────────────────────────────────────────
-const inp = {
-  border: `1.5px solid ${C.border}`, background: C.card, outline: "none",
-  padding: "6px 10px", fontFamily: fonts.sans, fontSize: 12, color: C.text,
-};
-
 // ─── Landmarks Panel ──────────────────────────────────────────────────────────
 function LandmarksPanel({ landmarks, onSave, workplaceAddress }) {
   const [open, setOpen] = useState(false);
@@ -159,47 +157,63 @@ function LandmarksPanel({ landmarks, onSave, workplaceAddress }) {
   const handleDelete = (id) => onSave(landmarks.filter(l => l.id !== id));
 
   return (
-    <div style={{ background: C.card, borderBottom: `1.5px solid ${C.border}`, flexShrink: 0 }}>
+    <div className="bg-card border-b-[1.5px] border-border shrink-0">
       {/* Collapsed bar */}
-      <div onClick={() => setOpen(!open)} style={{ display: "flex", alignItems: "center", gap: 16, padding: "10px 20px", cursor: "pointer", userSelect: "none", minHeight: 44 }}>
-        <span style={{ fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", fontWeight: 700, color: C.textMid, fontFamily: fonts.sans, flexShrink: 0 }}>Landmarks</span>
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", flex: 1, overflow: "hidden" }}>
+      <div
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-4 px-5 py-2.5 cursor-pointer select-none min-h-[44px]"
+      >
+        <span className="text-[9px] tracking-[0.2em] uppercase font-bold text-muted-foreground shrink-0">
+          Landmarks
+        </span>
+        <div className="flex gap-3.5 flex-wrap items-center flex-1 overflow-hidden">
           {workplaceAddress && (
-            <span style={{ fontSize: 11, color: C.textLight, fontFamily: fonts.sans, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
-              🏢 <span style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" }}>{workplaceAddress}</span>
+            <span className="text-[11px] text-muted-foreground flex items-center gap-1 whitespace-nowrap">
+              🏢 <span className="max-w-[200px] overflow-hidden text-ellipsis inline-block">{workplaceAddress}</span>
             </span>
           )}
           {landmarks.slice(0, 5).map(l => (
-            <span key={l.id} style={{ fontSize: 11, color: C.textLight, fontFamily: fonts.sans, display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap" }}>
+            <span key={l.id} className="text-[11px] text-muted-foreground flex items-center gap-1 whitespace-nowrap">
               {l.icon} {l.name.length > 18 ? l.name.slice(0, 18) + "…" : l.name}
             </span>
           ))}
-          {landmarks.length > 5 && <span style={{ fontSize: 10, color: C.textFaint, fontFamily: fonts.sans }}>+{landmarks.length - 5} more</span>}
+          {landmarks.length > 5 && (
+            <span className="text-[10px] text-muted-foreground/60">+{landmarks.length - 5} more</span>
+          )}
           {!workplaceAddress && landmarks.length === 0 && (
-            <span style={{ fontSize: 11, color: C.textFaint, fontFamily: fonts.serif, fontStyle: "italic" }}>None added yet — click to expand</span>
+            <span className="text-[11px] text-muted-foreground/60 italic">None added yet — click to expand</span>
           )}
         </div>
-        <span style={{ color: C.textFaint, fontSize: 13, transform: open ? "rotate(0)" : "rotate(-90deg)", transition: "transform 0.2s", flexShrink: 0 }}>▾</span>
+        <span className={cn("text-muted-foreground/60 text-[13px] shrink-0 transition-transform duration-200", open ? "rotate-0" : "-rotate-90")}>
+          ▾
+        </span>
       </div>
 
       {/* Expanded */}
       {open && (
-        <div style={{ padding: "4px 20px 16px", borderTop: `1px solid ${C.borderLight}` }}>
+        <div className="px-5 pb-4 pt-1 border-t border-border/50">
           {!workplaceAddress && (
-            <p style={{ fontSize: 12, fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: "10px 0 12px" }}>
+            <p className="text-xs text-muted-foreground italic my-2.5 mb-3">
               Tip: Set your workplace address in Gaff Tracker → Settings to pin it on the map.
             </p>
           )}
 
           {/* Landmark chips */}
           {landmarks.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "10px 0 14px" }}>
+            <div className="flex flex-wrap gap-2 my-2.5 mb-3.5">
               {landmarks.map(l => (
-                <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", border: `1.5px solid ${C.border}`, background: C.bg, fontFamily: fonts.sans, fontSize: 12 }}>
+                <div key={l.id} className="flex items-center gap-1.5 px-2.5 py-[5px] border border-border bg-background rounded text-xs">
                   <span>{l.icon}</span>
-                  <span style={{ color: C.text, fontWeight: 600 }}>{l.name}</span>
-                  <span style={{ color: C.textFaint, fontSize: 10 }}>{l.address.length > 28 ? l.address.slice(0, 28) + "…" : l.address}</span>
-                  <button onClick={() => handleDelete(l.id)} style={{ border: "none", background: "none", color: C.red, cursor: "pointer", fontSize: 16, padding: "0 0 0 4px", lineHeight: 1 }}>×</button>
+                  <span className="text-foreground font-semibold">{l.name}</span>
+                  <span className="text-muted-foreground/60 text-[10px]">
+                    {l.address.length > 28 ? l.address.slice(0, 28) + "…" : l.address}
+                  </span>
+                  <button
+                    onClick={() => handleDelete(l.id)}
+                    className="border-none bg-none text-red-500 cursor-pointer text-base pl-1 leading-none"
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
             </div>
@@ -207,21 +221,55 @@ function LandmarksPanel({ landmarks, onSave, workplaceAddress }) {
 
           {/* Add form */}
           {adding ? (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-              <select value={newIcon} onChange={e => setNewIcon(e.target.value)} style={{ ...inp, width: 52 }}>
+            <div className="flex gap-2 flex-wrap items-end">
+              <Select
+                value={newIcon}
+                onChange={e => setNewIcon(e.target.value)}
+                className="w-14 text-xs"
+              >
                 {LANDMARK_ICONS.map(ic => <option key={ic.value} value={ic.value}>{ic.value} {ic.label}</option>)}
-              </select>
-              <input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name (e.g. Sister's school)" style={{ ...inp, width: 180 }} />
-              <input type="text" value={newAddress} onChange={e => setNewAddress(e.target.value)} placeholder="Address or postcode" style={{ ...inp, flex: 1, minWidth: 200 }} onKeyDown={e => e.key === "Enter" && handleAdd()} />
-              <button onClick={handleAdd} disabled={saving || !newName.trim() || !newAddress.trim()} style={{ padding: "6px 16px", background: C.text, color: C.bg, border: "none", fontSize: 11, fontWeight: 700, fontFamily: fonts.sans, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em", opacity: saving ? 0.6 : 1 }}>
+              </Select>
+              <Input
+                type="text"
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                placeholder="Name (e.g. Sister's school)"
+                className="w-44 text-xs h-8"
+              />
+              <Input
+                type="text"
+                value={newAddress}
+                onChange={e => setNewAddress(e.target.value)}
+                placeholder="Address or postcode"
+                className="flex-1 min-w-[200px] text-xs h-8"
+                onKeyDown={e => e.key === "Enter" && handleAdd()}
+              />
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleAdd}
+                disabled={saving || !newName.trim() || !newAddress.trim()}
+                className="uppercase tracking-[0.06em] opacity-100 disabled:opacity-60"
+              >
                 {saving ? "…" : "Add"}
-              </button>
-              <button onClick={() => setAdding(false)} style={{ padding: "6px 12px", background: "transparent", color: C.textMid, border: `1px solid ${C.border}`, fontSize: 11, fontFamily: fonts.sans, cursor: "pointer" }}>Cancel</button>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAdding(false)}
+              >
+                Cancel
+              </Button>
             </div>
           ) : (
-            <button onClick={() => setAdding(true)} style={{ fontSize: 10, background: "transparent", border: `1px solid ${C.border}`, padding: "5px 14px", cursor: "pointer", fontFamily: fonts.sans, fontWeight: 700, color: C.textMid, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAdding(true)}
+              className="uppercase tracking-[0.08em] text-[10px]"
+            >
               + Add Landmark
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -245,65 +293,102 @@ function MapControls({ customFields, sortBy, onSort, filters, onFilter, activeTa
     ...rankingFields.map(f => ({ value: `rank_${f.id}_asc`, label: `${f.name} ↑` })),
   ];
   const hasFilters = Object.values(filters).some(v => v !== "" && v !== undefined);
-  const numInp = { border: `1px solid ${C.border}`, background: "#fff", padding: "4px 7px", fontFamily: fonts.sans, fontSize: 11, color: C.text, outline: "none", width: 64 };
 
   return (
-    <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10, width: 240 }}>
-      <div style={{ background: C.card, border: `1.5px solid ${C.border}`, boxShadow: "0 4px 16px rgba(0,0,0,0.12)" }}>
+    <div className="absolute top-3 left-3 z-10 w-60">
+      <div className="bg-card/95 backdrop-blur border border-border rounded-xl shadow-xl overflow-hidden">
         {/* Tab bar + toggle */}
-        <div style={{ display: "flex", alignItems: "center", padding: "8px 10px", gap: 6, borderBottom: open ? `1px solid ${C.borderLight}` : "none" }}>
+        <div className={cn(
+          "flex items-center px-2.5 py-2 gap-1.5",
+          open ? "border-b border-border/50" : ""
+        )}>
           {[{ key: "rent", label: "Rent" }, { key: "buy", label: "Buy" }].map(t => (
-            <button key={t.key} onClick={() => onActiveTab(t.key)} style={{
-              padding: "4px 14px", fontSize: 11, fontWeight: 600, fontFamily: fonts.sans,
-              border: `1.5px solid ${activeTab === t.key ? C.text : C.border}`,
-              background: activeTab === t.key ? C.text : "transparent",
-              color: activeTab === t.key ? C.bg : C.textMid, cursor: "pointer",
-            }}>{t.label}</button>
+            <button
+              key={t.key}
+              onClick={() => onActiveTab(t.key)}
+              className={cn(
+                "px-3.5 py-1 text-[11px] font-semibold border-[1.5px] cursor-pointer transition-colors rounded",
+                activeTab === t.key
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-border bg-transparent text-muted-foreground hover:bg-muted"
+              )}
+            >
+              {t.label}
+            </button>
           ))}
-          <span style={{ fontSize: 10, color: C.textFaint, fontFamily: fonts.sans, marginLeft: "auto" }}>
+          <span className="text-[10px] text-muted-foreground/60 ml-auto">
             {geocoding ? "…" : `${total} shown`}
           </span>
-          <button onClick={() => setOpen(!open)} style={{ padding: "3px 8px", fontSize: 10, background: "transparent", border: `1px solid ${C.border}`, cursor: "pointer", fontFamily: fonts.sans, color: C.textMid, marginLeft: 4 }}>
+          <button
+            onClick={() => setOpen(!open)}
+            className="px-2 py-[3px] text-[10px] bg-transparent border border-border cursor-pointer text-muted-foreground ml-1 rounded hover:bg-muted transition-colors"
+          >
             {hasFilters ? "● " : ""}{open ? "▴" : "▾"}
           </button>
         </div>
 
         {/* Expanded controls */}
         {open && (
-          <div style={{ padding: "12px 14px" }}>
+          <div className="p-3.5 max-h-[calc(100vh-200px)] overflow-y-auto">
             {/* Sort */}
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 8, letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 700, color: C.accent, fontFamily: fonts.sans, marginBottom: 6 }}>
+            <div className="mb-3.5">
+              <div className="text-[8px] tracking-[0.18em] uppercase font-bold text-brand mb-1.5">
                 Sort — affects pin size &amp; colour
               </div>
-              <select value={sortBy} onChange={e => onSort(e.target.value)} style={{ ...numInp, width: "100%" }}>
+              <Select value={sortBy} onChange={e => onSort(e.target.value)} className="w-full text-[11px] h-8">
                 {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              </Select>
             </div>
 
             {/* Filters */}
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <span style={{ fontSize: 8, letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 700, color: C.accent, fontFamily: fonts.sans }}>Filters</span>
-                {hasFilters && <button onClick={() => onFilter({})} style={{ fontSize: 9, background: "none", border: "none", color: C.accent, cursor: "pointer", fontFamily: fonts.sans, fontWeight: 600 }}>Clear all</button>}
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[8px] tracking-[0.18em] uppercase font-bold text-brand">Filters</span>
+                {hasFilters && (
+                  <button
+                    onClick={() => onFilter({})}
+                    className="text-[9px] bg-none border-none text-brand cursor-pointer font-semibold"
+                  >
+                    Clear all
+                  </button>
+                )}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 10px" }}>
+              <div className="grid grid-cols-2 gap-x-2.5 gap-y-2">
                 {[["Min beds", "minBeds"], ["Max beds", "maxBeds"], ["Max £", "maxPrice"]].map(([label, key]) => (
                   <div key={key}>
-                    <div style={{ fontSize: 8, fontFamily: fonts.sans, color: C.textLight, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</div>
-                    <input type="number" min={0} value={filters[key] || ""} onChange={e => onFilter({ ...filters, [key]: e.target.value })} style={numInp} />
+                    <div className="text-[8px] text-muted-foreground mb-[3px] uppercase tracking-[0.08em]">{label}</div>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={filters[key] || ""}
+                      onChange={e => onFilter({ ...filters, [key]: e.target.value })}
+                      className="w-16 h-7 text-[11px]"
+                    />
                   </div>
                 ))}
                 {rankingFields.map(f => (
                   <div key={f.id}>
-                    <div style={{ fontSize: 8, fontFamily: fonts.sans, color: C.textLight, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.08em" }}>Min {f.name}</div>
-                    <input type="number" min={1} max={10} value={filters[`rank_${f.id}`] || ""} onChange={e => onFilter({ ...filters, [`rank_${f.id}`]: e.target.value })} style={numInp} />
+                    <div className="text-[8px] text-muted-foreground mb-[3px] uppercase tracking-[0.08em]">Min {f.name}</div>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={filters[`rank_${f.id}`] || ""}
+                      onChange={e => onFilter({ ...filters, [`rank_${f.id}`]: e.target.value })}
+                      className="w-16 h-7 text-[11px]"
+                    />
                   </div>
                 ))}
                 {numberFields.map(f => (
                   <div key={f.id}>
-                    <div style={{ fontSize: 8, fontFamily: fonts.sans, color: C.textLight, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.08em" }}>Min {f.name}</div>
-                    <input type="number" min={0} value={filters[`num_${f.id}`] || ""} onChange={e => onFilter({ ...filters, [`num_${f.id}`]: e.target.value })} style={numInp} />
+                    <div className="text-[8px] text-muted-foreground mb-[3px] uppercase tracking-[0.08em]">Min {f.name}</div>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={filters[`num_${f.id}`] || ""}
+                      onChange={e => onFilter({ ...filters, [`num_${f.id}`]: e.target.value })}
+                      className="w-16 h-7 text-[11px]"
+                    />
                   </div>
                 ))}
               </div>
@@ -313,22 +398,22 @@ function MapControls({ customFields, sortBy, onSort, filters, onFilter, activeTa
       </div>
 
       {/* Rank legend */}
-      <div style={{ marginTop: 8, background: C.card, border: `1px solid ${C.border}`, padding: "6px 10px", display: "flex", alignItems: "center", gap: 8, boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <div style={{ width: 16, height: 16, borderRadius: "50%", background: "hsl(120,78%,40%)", border: "2px solid white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
-          <span style={{ fontSize: 9, fontFamily: fonts.sans, color: C.textMid }}>Best</span>
+      <div className="mt-2 bg-card/95 backdrop-blur border border-border rounded-xl px-2.5 py-1.5 flex items-center gap-2 shadow-md">
+        <div className="flex items-center gap-1">
+          <div className="w-4 h-4 rounded-full bg-[hsl(120,78%,40%)] border-2 border-white shadow-sm" />
+          <span className="text-[9px] text-muted-foreground">Best</span>
         </div>
-        <div style={{ flex: 1, height: 5, background: "linear-gradient(to right, hsl(120,78%,40%), hsl(60,78%,42%), hsl(0,78%,40%))", borderRadius: 3 }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <div style={{ width: 12, height: 12, borderRadius: "50%", background: "hsl(0,78%,40%)", border: "2px solid white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
-          <span style={{ fontSize: 9, fontFamily: fonts.sans, color: C.textMid }}>Worst</span>
+        <div className="flex-1 h-[5px] rounded-full" style={{ background: "linear-gradient(to right, hsl(120,78%,40%), hsl(60,78%,42%), hsl(0,78%,40%))" }} />
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-full bg-[hsl(0,78%,40%)] border-2 border-white shadow-sm" />
+          <span className="text-[9px] text-muted-foreground">Worst</span>
         </div>
       </div>
 
       {/* Key for special markers */}
-      <div style={{ marginTop: 6, background: C.card, border: `1px solid ${C.border}`, padding: "6px 10px", display: "flex", gap: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}>
-        <span style={{ fontSize: 9, fontFamily: fonts.sans, color: C.textMid, display: "flex", alignItems: "center", gap: 4 }}>🏢 Workplace</span>
-        <span style={{ fontSize: 9, fontFamily: fonts.sans, color: C.textMid, display: "flex", alignItems: "center", gap: 4 }}>📍 Landmark</span>
+      <div className="mt-1.5 bg-card/95 backdrop-blur border border-border rounded-xl px-2.5 py-1.5 flex gap-3 shadow-md">
+        <span className="text-[9px] text-muted-foreground flex items-center gap-1">🏢 Workplace</span>
+        <span className="text-[9px] text-muted-foreground flex items-center gap-1">📍 Landmark</span>
       </div>
     </div>
   );
@@ -506,12 +591,12 @@ export default function MapView() {
       hasPoints = true;
     });
 
-    // Workplace pin (gold)
+    // Workplace pin (gold) — use a fixed amber hex consistent with the accent colour
     if (workplaceCoord) {
       const marker = new window.google.maps.Marker({
         position: workplaceCoord,
         map,
-        icon: specialMarkerIcon("🏢", C.accent, 36),
+        icon: specialMarkerIcon("🏢", "#b8860b", 36),
         title: "Workplace",
         zIndex: 9999,
       });
@@ -565,26 +650,26 @@ export default function MapView() {
   // ── Fallbacks ──────────────────────────────────────────────────────────────
   if (!user) {
     return (
-      <div style={{ textAlign: "center", padding: "80px 20px" }}>
-        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, marginBottom: 12 }}>Map View</h2>
-        <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic" }}>Sign in to view your saved properties on a map.</p>
+      <div className="text-center px-5 py-20">
+        <h2 className="text-2xl font-normal text-foreground mb-3">Map View</h2>
+        <p className="text-muted-foreground italic">Sign in to view your saved properties on a map.</p>
       </div>
     );
   }
 
   if (!GMAPS_KEY) {
     return (
-      <div style={{ textAlign: "center", padding: "80px 20px" }}>
-        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, marginBottom: 12 }}>Map View</h2>
-        <p style={{ fontFamily: fonts.serif, color: C.textMid, marginBottom: 8 }}>A Google Maps API key is required to use this page.</p>
-        <p style={{ fontFamily: fonts.sans, fontSize: 12, color: C.textLight }}>Add <code>VITE_GOOGLE_MAPS_API_KEY</code> to your environment variables.</p>
+      <div className="text-center px-5 py-20">
+        <h2 className="text-2xl font-normal text-foreground mb-3">Map View</h2>
+        <p className="text-muted-foreground mb-2">A Google Maps API key is required to use this page.</p>
+        <p className="text-xs text-muted-foreground/70">Add <code>VITE_GOOGLE_MAPS_API_KEY</code> to your environment variables.</p>
       </div>
     );
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 117px)" }}>
+    <div className="flex flex-col h-[calc(100vh-117px)]">
       {/* Landmarks panel */}
       <LandmarksPanel
         landmarks={landmarks}
@@ -593,9 +678,9 @@ export default function MapView() {
       />
 
       {/* Map area */}
-      <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+      <div className="flex-1 relative overflow-hidden">
         {/* Map canvas */}
-        <div ref={mapRef} style={{ width: "100%", height: "100%" }} />
+        <div ref={mapRef} className="w-full h-full" />
 
         {/* Controls overlay */}
         <MapControls
@@ -612,24 +697,15 @@ export default function MapView() {
 
         {/* Loading / geocoding toast */}
         {(loading || geocoding) && (
-          <div style={{
-            position: "absolute", bottom: 16, right: 16,
-            background: C.card, border: `1px solid ${C.border}`,
-            padding: "6px 14px", fontFamily: fonts.sans, fontSize: 11,
-            color: C.textMid, boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-          }}>
+          <div className="absolute bottom-4 right-4 bg-card border border-border rounded-lg px-3.5 py-1.5 text-[11px] text-muted-foreground shadow-md">
             {loading ? "Loading properties…" : "Placing pins…"}
           </div>
         )}
 
         {/* No properties message */}
         {!loading && displayed.length === 0 && (
-          <div style={{
-            position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-            background: C.card, border: `1.5px solid ${C.border}`, padding: "24px 32px",
-            textAlign: "center", boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
-          }}>
-            <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: 0 }}>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-card border border-border rounded-xl px-8 py-6 text-center shadow-xl">
+            <p className="text-muted-foreground italic m-0">
               {properties.filter(p => p.listing_type === activeTab).length === 0
                 ? `No ${activeTab} properties saved yet. Add some in Gaff Tracker.`
                 : "No properties match the current filters."}
@@ -639,11 +715,7 @@ export default function MapView() {
 
         {/* SDK error */}
         {sdkError && (
-          <div style={{
-            position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
-            background: C.bg, fontFamily: fonts.serif, color: C.red, fontSize: 16, textAlign: "center",
-            padding: 32,
-          }}>
+          <div className="absolute inset-0 flex items-center justify-center bg-background text-red-500 text-base text-center p-8">
             Failed to load Google Maps. Check your API key and network connection.
           </div>
         )}

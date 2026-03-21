@@ -1,7 +1,11 @@
-import { C, fonts } from "../lib/tokens";
 import { pmtCalc, balCalc } from "../lib/calc";
+import { cn } from "../lib/utils";
 
-export default function SensitivityTable({ propertyValue, totalUpfront, loanAmount, fixedRate, mortgageTerm, fixedPeriod, revertRate, monthlyRent, rentInflation, ongoingMonthly, houseGrowth, estateAgentPct, sellingConveyancing, epcCost, mobile }) {
+export default function SensitivityTable({
+  propertyValue, totalUpfront, loanAmount, fixedRate, mortgageTerm,
+  fixedPeriod, revertRate, monthlyRent, rentInflation, ongoingMonthly,
+  houseGrowth, estateAgentPct, sellingConveyancing, epcCost, mobile,
+}) {
   const rates = [1, 2, 3, 4, 5, 7];
   const horizons = mobile ? [3, 5, 10] : [3, 5, 7, 10, 15];
 
@@ -25,30 +29,51 @@ export default function SensitivityTable({ propertyValue, totalUpfront, loanAmou
   }
 
   return (
-    <div style={{ marginTop: 24, overflowX: "auto" }}>
-      <div style={{ fontSize: 10, fontWeight: 600, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.12em", fontFamily: fonts.sans, marginBottom: 4 }}>
+    <div className="mt-6 overflow-x-auto">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
         Sensitivity — cost break-even
-      </div>
-      <div style={{ fontSize: 12, color: C.textLight, marginBottom: 16, fontFamily: fonts.serif, fontStyle: "italic" }}>
+      </p>
+      <p className="text-xs font-serif italic text-muted-foreground mb-4">
         Years until buying costs less than renting. — means never within that horizon.
-      </div>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: mobile ? 300 : "auto" }}>
+      </p>
+      <table className="w-full border-collapse" style={{ minWidth: mobile ? 300 : undefined }}>
         <thead>
           <tr>
-            <th style={{ padding: "8px 10px", fontSize: 10, fontFamily: fonts.sans, color: C.textLight, fontWeight: 600, textAlign: "left", borderBottom: `2px solid ${C.text}`, letterSpacing: "0.06em" }}>Growth</th>
-            {horizons.map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 10, fontFamily: fonts.sans, color: C.textLight, fontWeight: 600, textAlign: "center", borderBottom: `2px solid ${C.text}`, letterSpacing: "0.06em" }}>{h}yr</th>)}
+            <th className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground text-left border-b-2 border-foreground">
+              Growth
+            </th>
+            {horizons.map((h) => (
+              <th key={h} className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground text-center border-b-2 border-foreground">
+                {h}yr
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
-          {rates.map((r) => (
-            <tr key={r} style={{ background: Math.abs(r - houseGrowth) < 0.5 ? C.accentLight : "transparent" }}>
-              <td style={{ padding: "9px 10px", fontSize: 13, fontFamily: fonts.serif, color: Math.abs(r - houseGrowth) < 0.5 ? C.accent : C.textMid, fontWeight: Math.abs(r - houseGrowth) < 0.5 ? 700 : 400, textAlign: "left", borderBottom: `1px solid ${C.borderLight}` }}>{r}%</td>
-              {horizons.map((h) => {
-                const be = findBE(r, h * 12);
-                return <td key={h} style={{ padding: "9px 10px", fontSize: 13, fontFamily: fonts.serif, color: be != null ? C.green : C.red, fontWeight: be != null ? 600 : 400, textAlign: "center", borderBottom: `1px solid ${C.borderLight}` }}>{be != null ? `${(be / 12).toFixed(1)}y` : "—"}</td>;
-              })}
-            </tr>
-          ))}
+          {rates.map((r) => {
+            const isActive = Math.abs(r - houseGrowth) < 0.5;
+            return (
+              <tr key={r} className={cn(isActive && "bg-brand/8")}>
+                <td className={cn(
+                  "px-3 py-2.5 text-sm font-serif border-b border-border/60",
+                  isActive ? "text-brand font-bold" : "text-muted-foreground"
+                )}>
+                  {r}%
+                </td>
+                {horizons.map((h) => {
+                  const be = findBE(r, h * 12);
+                  return (
+                    <td key={h} className={cn(
+                      "px-3 py-2.5 text-sm font-serif text-center border-b border-border/60",
+                      be != null ? "text-success font-semibold" : "text-danger"
+                    )}>
+                      {be != null ? `${(be / 12).toFixed(1)}y` : "—"}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

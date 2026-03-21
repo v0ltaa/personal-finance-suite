@@ -1,11 +1,20 @@
-import { C, fonts } from "../lib/tokens";
+import { cn } from "../lib/utils";
 
-export default function Stat({ label, value, sub, mobile }) {
+export default function Stat({ label, value, sub, accent }) {
   return (
-    <div style={{ flex: 1, minWidth: mobile ? "100%" : 140 }}>
-      <div style={{ fontSize: 10, fontFamily: fonts.sans, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: mobile ? 24 : 28, fontFamily: fonts.serif, color: C.text, fontWeight: 400, lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, fontFamily: fonts.serif, color: C.textLight, fontStyle: "italic", marginTop: 6 }}>{sub}</div>}
+    <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+        {label}
+      </p>
+      <p className={cn(
+        "text-2xl sm:text-3xl font-serif font-normal leading-none tracking-tight text-foreground",
+        accent && "text-brand"
+      )}>
+        {value}
+      </p>
+      {sub && (
+        <p className="text-xs font-serif italic text-muted-foreground mt-1">{sub}</p>
+      )}
     </div>
   );
 }

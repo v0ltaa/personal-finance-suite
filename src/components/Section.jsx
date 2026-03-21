@@ -1,35 +1,55 @@
 import { useState } from "react";
-import { C, fonts } from "../lib/tokens";
+import { ChevronDown } from "lucide-react";
+import { Button } from "./ui/button";
+import { cn } from "../lib/utils";
 
 export default function Section({ title, children, defaultOpen = true, onSave, onLoad, canSave }) {
   const [open, setOpen] = useState(defaultOpen);
+
   return (
-    <div style={{ marginBottom: 36 }}>
-      <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        cursor: "pointer", userSelect: "none", marginBottom: open ? 20 : 0,
-        paddingBottom: 10, borderBottom: `1px solid ${C.border}`,
-      }}>
-        <span onClick={() => setOpen(!open)} style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: C.accent, fontWeight: 600, fontFamily: fonts.sans, flex: 1 }}>{title}</span>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <div className="mb-8">
+      <div
+        className={cn(
+          "flex items-center justify-between pb-2.5 border-b border-border",
+          "cursor-pointer select-none mb-0",
+          open && "mb-5"
+        )}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand">
+          {title}
+        </span>
+        <div className="flex items-center gap-1.5">
           {canSave && (
             <>
-              <button onClick={(e) => { e.stopPropagation(); onSave?.(); }} style={{
-                padding: "4px 10px", border: `1px solid ${C.border}`, borderRadius: 0,
-                background: "transparent", fontSize: 9, fontFamily: fonts.sans, fontWeight: 600,
-                color: C.textLight, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.08em",
-              }}>Save</button>
-              <button onClick={(e) => { e.stopPropagation(); onLoad?.(); }} style={{
-                padding: "4px 10px", border: `1px solid ${C.border}`, borderRadius: 0,
-                background: "transparent", fontSize: 9, fontFamily: fonts.sans, fontWeight: 600,
-                color: C.textLight, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.08em",
-              }}>Load</button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => { e.stopPropagation(); onSave?.(); }}
+                className="h-6 px-2 text-[10px] uppercase tracking-wide"
+              >
+                Save
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => { e.stopPropagation(); onLoad?.(); }}
+                className="h-6 px-2 text-[10px] uppercase tracking-wide"
+              >
+                Load
+              </Button>
             </>
           )}
-          <span onClick={() => setOpen(!open)} style={{ color: C.textFaint, fontSize: 14, transform: open ? "rotate(0)" : "rotate(-90deg)", transition: "transform 0.2s" }}>▾</span>
+          <ChevronDown
+            size={15}
+            className={cn(
+              "text-muted-foreground transition-transform duration-200",
+              !open && "-rotate-90"
+            )}
+          />
         </div>
       </div>
-      {open && children}
+      {open && <div className="animate-fade-in">{children}</div>}
     </div>
   );
 }

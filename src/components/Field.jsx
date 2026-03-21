@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { C, fonts } from "../lib/tokens";
 import { sliderRanges } from "../lib/calc";
+import { cn } from "../lib/utils";
 import Tip from "./Tip";
 
 export default function Field({ label, value, onChange, prefix, suffix, tip, note, sliderMode, fieldKey }) {
@@ -8,44 +8,44 @@ export default function Field({ label, value, onChange, prefix, suffix, tip, not
   const range = fieldKey && sliderRanges[fieldKey];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <label style={{
-          fontSize: 10, fontFamily: fonts.sans, fontWeight: 600,
-          color: C.textLight, letterSpacing: "0.12em", textTransform: "uppercase",
-          display: "flex", alignItems: "center",
-        }}>
-          {label}{tip && <Tip text={tip} />}
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between">
+        <label className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          {label}
+          {tip && <Tip text={tip} />}
         </label>
-        {note && <span style={{ fontSize: 11, color: C.textLight, fontFamily: fonts.serif, fontStyle: "italic" }}>{note}</span>}
+        {note && <span className="text-xs text-muted-foreground font-serif italic">{note}</span>}
       </div>
-      <div style={{
-        display: "flex", alignItems: "center",
-        borderBottom: `1.5px solid ${focused ? C.accent : C.border}`,
-        padding: "8px 0", transition: "border-color 0.2s",
-      }}>
-        {prefix && <span style={{ color: C.textLight, fontSize: 16, marginRight: 6, fontFamily: fonts.serif }}>{prefix}</span>}
-        <input type="number" value={value}
-          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+
+      <div className={cn(
+        "flex items-center border-b-2 pb-2 transition-colors duration-150",
+        focused ? "border-brand" : "border-border"
+      )}>
+        {prefix && (
+          <span className="text-muted-foreground text-base font-serif mr-2 shrink-0">{prefix}</span>
+        )}
+        <input
+          type="number"
+          value={value}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
-          style={{
-            background: "transparent", border: "none", outline: "none",
-            color: C.text, fontSize: 18, fontFamily: fonts.serif,
-            width: "100%", fontWeight: 400,
-          }}
+          className="bg-transparent border-none outline-none text-foreground text-lg font-serif w-full"
         />
-        {suffix && <span style={{ color: C.textLight, fontSize: 12, marginLeft: 6, fontFamily: fonts.sans }}>{suffix}</span>}
+        {suffix && (
+          <span className="text-muted-foreground text-xs font-sans ml-2 shrink-0">{suffix}</span>
+        )}
       </div>
+
       {sliderMode && range && (
         <input
           type="range"
-          min={range.min} max={range.max} step={range.step}
+          min={range.min}
+          max={range.max}
+          step={range.step}
           value={value || 0}
           onChange={(e) => onChange(Number(e.target.value))}
-          style={{
-            width: "100%", marginTop: 4, accentColor: C.accent,
-            height: 4, cursor: "pointer",
-          }}
+          className="w-full mt-1 h-1 cursor-pointer accent-brand"
         />
       )}
     </div>

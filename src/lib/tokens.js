@@ -20,8 +20,8 @@ export const lightTheme = {
   pill: "#8c3520", pillText: "#fdf7f3",
 };
 
-// Module-level theme state — mutated by ThemeProvider on toggle
-let _theme = localStorage.getItem("theme") || "dark";
+// Module-level theme state — light only
+let _theme = "light";
 export function _setTheme(t) { _theme = t; }
 export function _getTheme() { return _theme; }
 
