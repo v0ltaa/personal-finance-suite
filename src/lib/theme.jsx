@@ -1,23 +1,18 @@
-import { createContext, useContext, useState } from "react";
-import { _setTheme, _getTheme, darkTheme, lightTheme } from "./tokens";
+import { createContext, useContext, useEffect } from "react";
+import { _setTheme } from "./tokens";
 
-const ThemeCtx = createContext({ theme: "dark", toggleTheme: () => {} });
+const ThemeCtx = createContext({ theme: "light", toggleTheme: () => {} });
 
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(_getTheme);
-
-  const toggleTheme = () => {
-    setTheme(t => {
-      const next = t === "dark" ? "light" : "dark";
-      _setTheme(next);
-      localStorage.setItem("theme", next);
-      document.body.style.background = (next === "dark" ? darkTheme : lightTheme).bg;
-      return next;
-    });
-  };
+  useEffect(() => {
+    // Force light mode, clear any stored dark preference
+    _setTheme("light");
+    localStorage.removeItem("theme");
+    document.documentElement.classList.remove("dark");
+  }, []);
 
   return (
-    <ThemeCtx.Provider value={{ theme, toggleTheme }}>
+    <ThemeCtx.Provider value={{ theme: "light", toggleTheme: () => {} }}>
       {children}
     </ThemeCtx.Provider>
   );

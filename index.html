@@ -6,11 +6,9 @@
     <title>Personal Finance Suite</title>
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
     <style>
-      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-      body { background: #0e0b0a; -webkit-font-smoothing: antialiased; }
-      input[type="number"]::-webkit-inner-spin-button,
-      input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-      input[type="number"] { -moz-appearance: textfield; }
+      /* Prevent FOUC — dark by default until theme class resolves */
+      html { background: hsl(20 18% 7%); }
+      html:not(.dark) { background: hsl(30 25% 96%); }
     </style>
   </head>
   <body>

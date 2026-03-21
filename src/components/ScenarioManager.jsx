@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
-import { C, fonts } from "../lib/tokens";
 import { loadAllScenarios, deleteScenario, saveScenario, loadScenarios } from "../lib/supabase";
+import { Dialog, DialogHeader, DialogTitle, DialogBody } from "./ui/dialog";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Trash2, Upload } from "lucide-react";
 
-// Full-screen scenario manager panel (opened from banner icon)
 export default function ScenarioManager({ onClose, onLoadScenario }) {
   const [scenarios, setScenarios] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,59 +22,57 @@ export default function ScenarioManager({ onClose, onLoadScenario }) {
   };
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
-      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
-    }}>
-      <div style={{
-        background: C.card, padding: 32, width: "100%", maxWidth: 540, maxHeight: "80vh",
-        overflow: "auto", boxShadow: "0 16px 64px rgba(0,0,0,0.15)", position: "relative",
-      }}>
-        <button onClick={onClose} style={{
-          position: "absolute", top: 12, right: 12, background: "none", border: "none",
-          fontSize: 18, color: C.textLight, cursor: "pointer",
-        }}>×</button>
-        <h2 style={{ fontFamily: fonts.serif, fontWeight: 400, margin: "0 0 20px 0", color: C.text }}>Saved Scenarios</h2>
-
-        {loading && <div style={{ color: C.textLight, fontFamily: fonts.sans }}>Loading...</div>}
+    <Dialog open onClose={onClose} className="max-w-lg">
+      <DialogHeader onClose={onClose}>
+        <DialogTitle>Saved Scenarios</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        {loading && (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        )}
 
         {!loading && scenarios.length === 0 && (
-          <p style={{ color: C.textMid, fontFamily: fonts.serif, fontStyle: "italic" }}>
-            No saved scenarios yet. Use the Save button on each input section to save configurations.
+          <p className="text-sm font-serif italic text-muted-foreground">
+            No saved scenarios yet. Use the Save button on each input section.
           </p>
         )}
 
-        {scenarios.map((s) => (
-          <div key={s.id} style={{
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            padding: "12px 0", borderBottom: `1px solid ${C.borderLight}`,
-          }}>
-            <div>
-              <div style={{ fontFamily: fonts.serif, fontSize: 15, color: C.text }}>{s.name}</div>
-              <div style={{ fontFamily: fonts.sans, fontSize: 10, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 4 }}>
-                {s.section} · {new Date(s.updated_at).toLocaleDateString()}
+        <div className="flex flex-col divide-y divide-border">
+          {scenarios.map((s) => (
+            <div key={s.id} className="flex items-center justify-between py-3">
+              <div>
+                <p className="text-sm font-serif text-foreground">{s.name}</p>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground mt-0.5">
+                  {s.section} · {new Date(s.updated_at).toLocaleDateString()}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {onLoadScenario && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { onLoadScenario(s); onClose(); }}
+                  >
+                    <Upload size={12} /> Load
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => handleDelete(s.id)}
+                  className="text-danger hover:text-danger hover:bg-danger/10"
+                >
+                  <Trash2 size={14} />
+                </Button>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { onLoadScenario?.(s); onClose(); }} style={{
-                padding: "6px 14px", border: `1px solid ${C.accent}`, borderRadius: 0,
-                background: "transparent", color: C.accent, fontSize: 10, fontWeight: 600,
-                cursor: "pointer", fontFamily: fonts.sans, textTransform: "uppercase",
-              }}>Load</button>
-              <button onClick={() => handleDelete(s.id)} style={{
-                padding: "6px 14px", border: `1px solid ${C.red}`, borderRadius: 0,
-                background: "transparent", color: C.red, fontSize: 10, fontWeight: 600,
-                cursor: "pointer", fontFamily: fonts.sans, textTransform: "uppercase",
-              }}>Delete</button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+          ))}
+        </div>
+      </DialogBody>
+    </Dialog>
   );
 }
 
-// Inline save dialog (used by Section save button)
 export function SaveDialog({ section, config, onClose }) {
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -86,39 +86,39 @@ export function SaveDialog({ section, config, onClose }) {
   };
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)",
-      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
-    }}>
-      <div style={{
-        background: C.card, padding: 28, width: "100%", maxWidth: 340,
-        boxShadow: "0 8px 32px rgba(0,0,0,0.12)", position: "relative",
-      }}>
-        <button onClick={onClose} style={{
-          position: "absolute", top: 10, right: 10, background: "none", border: "none",
-          fontSize: 18, color: C.textLight, cursor: "pointer",
-        }}>×</button>
-        <h3 style={{ fontFamily: fonts.serif, fontWeight: 400, margin: "0 0 16px 0", color: C.text }}>Save Configuration</h3>
-        <input type="text" placeholder="Scenario name..." value={name} onChange={(e) => setName(e.target.value)} autoFocus
-          style={{ width: "100%", padding: "10px 12px", border: `1.5px solid ${C.border}`, borderRadius: 0, fontFamily: fonts.sans, fontSize: 14, outline: "none", background: "transparent", color: C.text, boxSizing: "border-box" }} />
-        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-          <button onClick={handleSave} disabled={saving || !name.trim()} style={{
-            flex: 1, padding: "10px", border: "none", background: C.text, color: C.bg,
-            fontSize: 12, fontWeight: 600, fontFamily: fonts.sans, cursor: "pointer",
-            textTransform: "uppercase", opacity: saving ? 0.6 : 1,
-          }}>{saving ? "Saving..." : "Save"}</button>
-          <button onClick={onClose} style={{
-            flex: 1, padding: "10px", border: `1.5px solid ${C.border}`, background: "transparent",
-            color: C.textMid, fontSize: 12, fontWeight: 600, fontFamily: fonts.sans, cursor: "pointer",
-            textTransform: "uppercase",
-          }}>Cancel</button>
+    <Dialog open onClose={onClose} className="max-w-sm">
+      <DialogHeader onClose={onClose}>
+        <DialogTitle>Save Configuration</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <div className="flex flex-col gap-3">
+          <Input
+            type="text"
+            placeholder="Scenario name…"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+            onKeyDown={(e) => e.key === "Enter" && handleSave()}
+          />
+          <div className="flex gap-2">
+            <Button
+              variant="default"
+              className="flex-1"
+              onClick={handleSave}
+              disabled={saving || !name.trim()}
+            >
+              {saving ? "Saving…" : "Save"}
+            </Button>
+            <Button variant="outline" className="flex-1" onClick={onClose}>
+              Cancel
+            </Button>
+          </div>
         </div>
-      </div>
-    </div>
+      </DialogBody>
+    </Dialog>
   );
 }
 
-// Inline load dialog
 export function LoadDialog({ section, onLoad, onClose }) {
   const [scenarios, setScenarios] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -131,41 +131,33 @@ export function LoadDialog({ section, onLoad, onClose }) {
   }, [section]);
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)",
-      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
-    }}>
-      <div style={{
-        background: C.card, padding: 28, width: "100%", maxWidth: 380, maxHeight: "60vh", overflow: "auto",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.12)", position: "relative",
-      }}>
-        <button onClick={onClose} style={{
-          position: "absolute", top: 10, right: 10, background: "none", border: "none",
-          fontSize: 18, color: C.textLight, cursor: "pointer",
-        }}>×</button>
-        <h3 style={{ fontFamily: fonts.serif, fontWeight: 400, margin: "0 0 16px 0", color: C.text }}>Load Configuration</h3>
-        {loading && <div style={{ color: C.textLight }}>Loading...</div>}
+    <Dialog open onClose={onClose} className="max-w-sm">
+      <DialogHeader onClose={onClose}>
+        <DialogTitle>Load Configuration</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
         {!loading && scenarios.length === 0 && (
-          <p style={{ color: C.textMid, fontFamily: fonts.serif, fontStyle: "italic" }}>No saved configs for this section.</p>
+          <p className="text-sm font-serif italic text-muted-foreground">No saved configs for this section.</p>
         )}
-        {scenarios.map((s) => (
-          <button key={s.id} onClick={() => { onLoad(s.config); onClose(); }} style={{
-            display: "block", width: "100%", padding: "12px 14px", border: `1px solid ${C.borderLight}`,
-            borderRadius: 0, background: "transparent", cursor: "pointer", textAlign: "left",
-            marginBottom: 6, transition: "background 0.1s",
-          }}>
-            <div style={{ fontFamily: fonts.serif, fontSize: 14, color: C.text }}>{s.name}</div>
-            <div style={{ fontFamily: fonts.sans, fontSize: 10, color: C.textLight, marginTop: 4 }}>
-              {new Date(s.updated_at).toLocaleDateString()}
-            </div>
-          </button>
-        ))}
-        <button onClick={onClose} style={{
-          marginTop: 12, width: "100%", padding: "10px", border: `1.5px solid ${C.border}`,
-          background: "transparent", color: C.textMid, fontSize: 12, fontWeight: 600,
-          fontFamily: fonts.sans, cursor: "pointer", textTransform: "uppercase",
-        }}>Cancel</button>
-      </div>
-    </div>
+        <div className="flex flex-col gap-1.5">
+          {scenarios.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => { onLoad(s.config); onClose(); }}
+              className="w-full text-left px-4 py-3 rounded-lg border border-border hover:bg-muted transition-colors duration-150"
+            >
+              <p className="text-sm font-serif text-foreground">{s.name}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {new Date(s.updated_at).toLocaleDateString()}
+              </p>
+            </button>
+          ))}
+        </div>
+        <Button variant="outline" className="w-full mt-4" onClick={onClose}>
+          Cancel
+        </Button>
+      </DialogBody>
+    </Dialog>
   );
 }

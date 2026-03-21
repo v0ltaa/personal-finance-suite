@@ -70,7 +70,7 @@ function injectCardStyles() {
     .prop-tile:hover .prop-img { transform: scale(1.06); }
     .prop-arrow-fill {
       position: absolute; inset: 0; border-radius: 50%;
-      background: rgba(70,70,70,0.88);
+      background: hsl(18 72% 52%);
       clip-path: circle(0% at 50% 100%);
       transition: clip-path 0.3s ease;
       pointer-events: none;
@@ -122,7 +122,7 @@ function PhotoCropModal({ onClose, onSave, onSaveUrl }) {
   const [urlInput, setUrlInput] = useState("");
   const [urlError, setUrlError] = useState("");
   const fileRef = useRef(null);
-  const starColor = "#D4A017";
+  const starColor = C.accent;
 
   const handleFile = (file) => {
     if (!file || !file.type.startsWith("image/")) return;
@@ -330,7 +330,7 @@ function PhotoCarousel({ propertyId, userId, onMainPhotoChange }) {
   const [uploadError, setUploadError] = useState(null);
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [noteText, setNoteText] = useState("");
-  const starColor = "#D4A017";
+  const starColor = C.accent;
 
   // Load on first render
   useEffect(() => {
@@ -481,11 +481,11 @@ function PhotoCarousel({ propertyId, userId, onMainPhotoChange }) {
             <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 5 }}>
               {current && !current.is_main && (
                 <button onClick={() => handleSetMain(current)}
-                  style={{ background: "rgba(0,0,0,0.6)", border: `1px solid ${starColor}`, color: starColor, fontSize: 14, cursor: "pointer", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center" }} title="Set as main photo">☆</button>
+                  style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.6)", color: "#fff", fontSize: 14, cursor: "pointer", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center" }} title="Set as main photo">☆</button>
               )}
               {current && (
                 <button onClick={() => handleDelete(current)}
-                  style={{ background: "rgba(0,0,0,0.6)", border: "1px solid #ef4444", color: "#ef4444", fontSize: 16, cursor: "pointer", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center" }} title="Delete photo">×</button>
+                  style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,80,80,0.8)", color: "#ff6b6b", fontSize: 16, cursor: "pointer", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center" }} title="Delete photo">×</button>
               )}
             </div>
             {/* Counter */}
@@ -785,7 +785,7 @@ function ModalCarousel({ propertyId, userId, onMainPhotoChange }) {
   const [idx, setIdx] = useState(0);
   const [showCrop, setShowCrop] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const starColor = "#D4A017";
+  const starColor = C.accent;
 
   useEffect(() => {
     loadPropertyPhotos(propertyId).then(({ data }) => setPhotos(data || []));
@@ -851,7 +851,7 @@ function ModalCarousel({ propertyId, userId, onMainPhotoChange }) {
     <div>
       {showCrop && <PhotoCropModal onClose={() => setShowCrop(false)} onSave={handleSavePhoto} onSaveUrl={handleSavePhotoUrl} />}
 
-      {/* Main image — cover fit, no black bars */}
+      {/* Main image — cover fit, all controls overlaid, no row below */}
       <div style={{ position: "relative", width: "100%", paddingTop: "62%", background: "#f0f0f0", overflow: "hidden" }}>
         {photos.length === 0 ? (
           <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
@@ -865,42 +865,41 @@ function ModalCarousel({ propertyId, userId, onMainPhotoChange }) {
             {current && (
               <img src={current.url} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }} onError={e => { e.target.style.opacity = "0.3"; }} />
             )}
-            {/* Set main / delete overlay — top right */}
+
+            {/* Top-right: star + delete */}
             <div style={{ position: "absolute", top: 10, right: 10, display: "flex", gap: 6 }}>
               {current && !current.is_main && (
                 <button onClick={() => handleSetMain(current)} title="Set as main photo"
-                  style={{ background: "rgba(0,0,0,0.5)", border: `1px solid ${starColor}`, color: starColor, fontSize: 15, cursor: "pointer", width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>☆</button>
+                  style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.6)", color: "#fff", fontSize: 15, cursor: "pointer", width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>☆</button>
               )}
               {current?.is_main && (
                 <span style={{ background: starColor, color: "#fff", fontSize: 10, fontFamily: fonts.sans, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>★ Main</span>
               )}
               {current && (
                 <button onClick={() => handleDelete(current)} title="Delete photo"
-                  style={{ background: "rgba(0,0,0,0.5)", border: "1px solid #ef4444", color: "#ef4444", fontSize: 16, cursor: "pointer", width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                  style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,80,80,0.8)", color: "#ff6b6b", fontSize: 16, cursor: "pointer", width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
               )}
             </div>
+
+            {/* Bottom-left: add photo */}
+            <button onClick={() => setShowCrop(true)} disabled={uploading}
+              style={{ position: "absolute", bottom: 10, left: 10, background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.4)", borderRadius: 20, fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: "#fff", cursor: "pointer", padding: "5px 12px" }}>
+              {uploading ? "Uploading…" : "+ Add Photo"}
+            </button>
+
+            {/* Bottom-right: counter + nav */}
+            {photos.length > 1 && (
+              <div style={{ position: "absolute", bottom: 10, right: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ background: "rgba(0,0,0,0.5)", color: "#fff", fontSize: 11, fontFamily: fonts.sans, padding: "4px 8px", borderRadius: 12 }}>{idx + 1}/{photos.length}</span>
+                <button onClick={() => setIdx(i => (i - 1 + photos.length) % photos.length)}
+                  style={{ width: 30, height: 30, borderRadius: "50%", border: "1px solid rgba(255,255,255,0.5)", background: "rgba(0,0,0,0.5)", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>‹</button>
+                <button onClick={() => setIdx(i => (i + 1) % photos.length)}
+                  style={{ width: 30, height: 30, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.9)", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", color: "#111" }}>›</button>
+              </div>
+            )}
           </>
         )}
       </div>
-
-      {/* Counter + nav row */}
-      {photos.length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0 0" }}>
-          <button onClick={() => setShowCrop(true)} disabled={uploading}
-            style={{ background: "transparent", border: "none", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, color: C.textLight, cursor: "pointer", padding: 0 }}>
-            {uploading ? "Uploading…" : "+ Add Photo"}
-          </button>
-          {photos.length > 1 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontFamily: fonts.sans, fontSize: 13, color: C.textMid }}>{idx + 1} / {photos.length}</span>
-              <button onClick={() => setIdx(i => (i - 1 + photos.length) % photos.length)}
-                style={{ width: 36, height: 36, borderRadius: "50%", border: `1.5px solid ${C.border}`, background: "#fff", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: C.text, fontWeight: 300 }}>‹</button>
-              <button onClick={() => setIdx(i => (i + 1) % photos.length)}
-                style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: C.text, cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 300 }}>›</button>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -938,11 +937,11 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1100, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: mobile ? "0" : "24px 16px", overflowY: "auto" }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1100, display: "flex", alignItems: mobile ? "flex-start" : "center", justifyContent: "center", padding: mobile ? "0" : "16px", overflowY: "auto" }}
       onClick={onClose}
     >
       <div
-        style={{ background: C.card, width: "100%", maxWidth: 980, borderRadius: mobile ? 0 : 12, boxShadow: "0 32px 100px rgba(0,0,0,0.28)", position: "relative", marginBottom: mobile ? 0 : 24 }}
+        style={{ background: C.card, width: "100%", maxWidth: 1100, borderRadius: mobile ? 0 : 12, boxShadow: "0 32px 100px rgba(0,0,0,0.28)", position: "relative", minHeight: mobile ? "100vh" : undefined }}
         onClick={e => e.stopPropagation()}
       >
         {/* Close button */}
@@ -989,9 +988,10 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
             {darkStats.length > 0 && (
               <div style={{ display: "flex", gap: 0, borderTop: "1px solid rgba(255,255,255,0.12)", borderBottom: "1px solid rgba(255,255,255,0.12)", marginBottom: 28, padding: "16px 0" }}>
                 {darkStats.map((st, i) => (
-                  <div key={i} title={st.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, borderRight: i < darkStats.length - 1 ? "1px solid rgba(255,255,255,0.12)" : "none" }}>
+                  <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, borderRight: i < darkStats.length - 1 ? "1px solid rgba(255,255,255,0.12)" : "none" }}>
                     {st.icon}
-                    <span style={{ fontSize: 13, fontFamily: fonts.sans, fontWeight: 600, color: "#fff" }}>{st.val}</span>
+                    <span style={{ fontSize: 14, fontFamily: fonts.sans, fontWeight: 700, color: "#fff" }}>{st.val}</span>
+                    <span style={{ fontSize: 10, fontFamily: fonts.sans, fontWeight: 500, color: "rgba(255,255,255,0.55)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{st.label}</span>
                   </div>
                 ))}
               </div>
@@ -1030,7 +1030,7 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
                   </button>
                 ) : (
                   <button onClick={() => onMarkSold(p, new Date().toISOString())}
-                    style={{ padding: "12px", borderRadius: 24, border: "1.5px solid rgba(255,165,0,0.6)", background: "transparent", color: "#FFA500", fontFamily: fonts.sans, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    style={{ padding: "12px", borderRadius: 24, border: "1.5px solid rgba(90,171,204,0.6)", background: "transparent", color: C.green, fontFamily: fonts.sans, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                     Mark as Sold
                   </button>
                 )
@@ -1042,40 +1042,27 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
         {/* Bottom section: map + details */}
         <div style={{ padding: mobile ? "24px 16px" : "32px 28px" }}>
           <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 36 }}>
-            {/* Left: map + distance */}
+            {/* Left: map */}
             <div>
               {p.location && (
                 <>
                   <div style={s.sectionHead}>Location</div>
-                  <div style={{ fontSize: 13, color: C.textMid, fontFamily: fonts.sans, marginBottom: 12 }}>{p.location}</div>
-                  <div style={{ marginBottom: 24, borderRadius: 8, overflow: "hidden", border: `1px solid ${C.borderLight}` }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, color: C.textMid, fontFamily: fonts.sans }}>{p.location}</div>
+                    <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.location)}`} target="_blank" rel="noreferrer"
+                      style={{ fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, color: C.accent, textDecoration: "none", whiteSpace: "nowrap", marginLeft: 12 }}>
+                      Open in Maps ↗
+                    </a>
+                  </div>
+                  <div style={{ marginBottom: 8, borderRadius: 8, overflow: "hidden", border: `1px solid ${C.borderLight}` }}>
                     <iframe title="map" src={`https://maps.google.com/maps?q=${encodeURIComponent(p.location)}&output=embed&z=14&hl=en`} width="100%" height="220" style={{ border: 0, display: "block" }} loading="lazy" />
                   </div>
-                  <div style={s.sectionHead}>Distance to Work</div>
-                  <DistanceSection location={p.location} workplaceAddress={workplaceAddress} propertyId={p.id} customValues={p.custom_values} />
                 </>
               )}
             </div>
 
-            {/* Right: details + custom + notes */}
+            {/* Right: custom fields + commute + notes */}
             <div>
-              <div style={s.sectionHead}>Details</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginBottom: 28 }}>
-                {[
-                  ["Price", p.price > 0 ? `${fmtPrice(p.price)}${p.listing_type === "rent" ? "/mo" : ""}` : "—"],
-                  ["Type", p.property_type],
-                  ["Bedrooms", p.bedrooms || "—"],
-                  ["Bathrooms", p.bathrooms || "—"],
-                  p.size > 0 && ["Size", `${p.size} ${p.size_unit}`],
-                  sizePerRoom && ["Per Bedroom", `${sizePerRoom} ${p.size_unit}`],
-                ].filter(Boolean).map(([k, v]) => (
-                  <div key={k} style={{ padding: "12px", background: "#f7f7f7", borderRadius: 8 }}>
-                    <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 4 }}>{k}</div>
-                    <div style={{ fontSize: 15, fontFamily: fonts.sans, fontWeight: 600, color: C.text, textTransform: "capitalize" }}>{v}</div>
-                  </div>
-                ))}
-              </div>
-
               {customFields.length > 0 && (() => {
                 const filled = customFields.filter(f => isCustomFieldFilled(f, p.custom_values?.[f.id]));
                 if (!filled.length) return null;
@@ -1103,6 +1090,49 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
                         );
                       })}
                     </div>
+                  </>
+                );
+              })()}
+
+              {/* Commute to Work — shown only if user entered any distance */}
+              {(() => {
+                const cv = p.custom_values || {};
+                const modes = [
+                  { key: "__commute_walk",    label: "Walk",    icon: "🚶" },
+                  { key: "__commute_drive",   label: "Drive",   icon: "🚗" },
+                  { key: "__commute_cycle",   label: "Cycle",   icon: "🚲" },
+                  { key: "__commute_transit", label: "Transit", icon: "🚌" },
+                ];
+                const filledModes = modes.filter(m => cv[m.key]);
+                const hasCost = cv.__commute_petrol || cv.__commute_transport;
+                if (!filledModes.length && !hasCost) return null;
+                return (
+                  <>
+                    <div style={s.sectionHead}>Commute to Work</div>
+                    {filledModes.length > 0 && (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginBottom: hasCost ? 12 : 0 }}>
+                        {filledModes.map(m => (
+                          <div key={m.key}>
+                            <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 3 }}>{m.icon} {m.label}</div>
+                            <div style={{ fontSize: 14, fontFamily: fonts.sans, color: C.text }}>{cv[m.key]}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {hasCost && (
+                      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
+                        {cv.__commute_petrol && (
+                          <div style={{ fontSize: 12, fontFamily: fonts.sans, color: C.textMid }}>
+                            🚗 Car: <strong style={{ color: C.text }}>£{Number(cv.__commute_petrol).toFixed(2)}</strong>/trip
+                          </div>
+                        )}
+                        {cv.__commute_transport && (
+                          <div style={{ fontSize: 12, fontFamily: fonts.sans, color: C.textMid }}>
+                            🚌 Transit: <strong style={{ color: C.text }}>£{Number(cv.__commute_transport).toFixed(2)}</strong>/trip
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </>
                 );
               })()}
@@ -1155,21 +1185,18 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
           )}
 
           {/* Status badge */}
-          <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 6, alignItems: "center" }}>
-            {p.custom_values?.__sold_at && (
+          {p.custom_values?.__sold_at && (
+            <div style={{ position: "absolute", top: 12, right: 12 }}>
               <span style={{ background: C.green, color: "#fff", fontSize: 11, fontFamily: fonts.sans, fontWeight: 700, padding: "5px 14px", borderRadius: 20 }}>
                 SOLD
               </span>
-            )}
-            <span style={{ background: C.pill, color: C.pillText, fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, padding: "5px 14px", borderRadius: 20 }}>
-              {p.listing_type === "rent" ? "To Rent" : "For Sale"}
-            </span>
-          </div>
+            </div>
+          )}
 
           {/* Arrow button with clip-path fill animation */}
-          <div style={{ position: "absolute", bottom: 14, right: 14, width: 40, height: 40, borderRadius: "50%", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", overflow: "hidden" }}>
+          <div style={{ position: "absolute", bottom: 14, right: 14, width: 40, height: 40, borderRadius: "50%", background: C.accent, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", overflow: "hidden" }}>
             <div className="prop-arrow-fill" />
-            <svg className="prop-arrow-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.text} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ position: "relative", zIndex: 1 }}>
+            <svg className="prop-arrow-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ position: "relative", zIndex: 1 }}>
               <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
             </svg>
           </div>
@@ -1187,8 +1214,13 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
               </span>
             )}
           </div>
-          <div style={{ fontFamily: fonts.sans, fontSize: 13, color: C.textMid, lineHeight: 1.4 }}>
-            {p.name}{p.location ? `, ${p.location}` : ""}
+          <div style={{ fontFamily: fonts.sans, fontSize: 15, color: C.accent, lineHeight: 1.4, marginTop: 4 }}>
+            {p.name}
+            {p.location ? (
+              <span style={{ color: C.textMid, fontSize: 13 }}>
+                {", "}{p.location.replace(/\s*\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b/gi, "").replace(/,\s*$/, "").trim()}
+              </span>
+            ) : null}
           </div>
         </div>
 
@@ -1244,10 +1276,11 @@ const EMPTY_FORM = {
   custom_values: {},
   // virtual fields — stored inside custom_values on save
   _price_currency: "GBP",
-  _commute_distance: "", _commute_petrol: "", _commute_transport: "",
+  _commute_walk: "", _commute_drive: "", _commute_cycle: "", _commute_transit: "",
+  _commute_petrol: "", _commute_transport: "",
 };
 
-function PropertyDialog({ property, customFields, defaultListingType, onSave, onClose, onOpenSettings, mobile, userId, rates }) {
+function PropertyDialog({ property, customFields, defaultListingType, onSave, onClose, onOpenSettings, mobile, userId, rates, workplaceAddress }) {
   const existingCurrency = property?.custom_values?.__price_currency || "GBP";
   const existingPriceLocal = property?.custom_values?.__price_local ?? property?.price ?? "";
   const [form, setForm] = useState(property ? {
@@ -1255,9 +1288,12 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
     size: property.size || "",
     price: existingPriceLocal,
     _price_currency: existingCurrency,
-    _commute_distance: property.custom_values?.__commute_distance || "",
-    _commute_petrol:   property.custom_values?.__commute_petrol   || "",
-    _commute_transport:property.custom_values?.__commute_transport|| "",
+    _commute_walk:      property.custom_values?.__commute_walk      || "",
+    _commute_drive:     property.custom_values?.__commute_drive     || "",
+    _commute_cycle:     property.custom_values?.__commute_cycle     || "",
+    _commute_transit:   property.custom_values?.__commute_transit   || "",
+    _commute_petrol:    property.custom_values?.__commute_petrol    || "",
+    _commute_transport: property.custom_values?.__commute_transport || "",
   } : { ...EMPTY_FORM, listing_type: defaultListingType });
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
@@ -1296,17 +1332,24 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
     const priceGBP = priceLocal != null ? Math.round(toGBP(priceLocal, priceCurrency, rates)) : null;
     customValues.__price_currency = priceCurrency;
     customValues.__price_local    = priceLocal;
-    if (form._commute_distance !== "")  customValues.__commute_distance  = Number(form._commute_distance);
-    else                                delete customValues.__commute_distance;
+    ["walk", "drive", "cycle", "transit"].forEach(mode => {
+      const val = form[`_commute_${mode}`];
+      if (val !== "") customValues[`__commute_${mode}`] = val;
+      else delete customValues[`__commute_${mode}`];
+    });
     if (form._commute_petrol !== "")    customValues.__commute_petrol    = Number(form._commute_petrol);
     else                                delete customValues.__commute_petrol;
     if (form._commute_transport !== "") customValues.__commute_transport = Number(form._commute_transport);
     else                                delete customValues.__commute_transport;
+    // Remove old single-distance field if present
+    delete customValues.__commute_distance;
 
     const payload = { ...form, size: form.size === "" ? null : Number(form.size), price: priceGBP, custom_values: customValues };
     delete payload.id; delete payload.user_id; delete payload.created_at; delete payload.updated_at;
     // Remove virtual fields from payload
-    delete payload._price_currency; delete payload._commute_distance;
+    delete payload._price_currency;
+    delete payload._commute_walk; delete payload._commute_drive;
+    delete payload._commute_cycle; delete payload._commute_transit;
     delete payload._commute_petrol; delete payload._commute_transport;
 
     let saveError = null;
@@ -1324,11 +1367,11 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
     onSave();
   };
 
-  const grid2 = { display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: "16px 24px", marginBottom: 16 };
+  const grid2 = { display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr 1fr", gap: "14px 20px", marginBottom: 14 };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 1000, overflowY: "auto", padding: "24px 16px" }}>
-      <div style={{ background: C.card, width: "100%", maxWidth: 640, boxShadow: "0 16px 64px rgba(0,0,0,0.18)", position: "relative", marginBottom: 24 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "12px 16px" }}>
+      <div style={{ background: C.card, width: "100%", maxWidth: 860, maxHeight: "94vh", overflowY: "auto", boxShadow: "0 16px 64px rgba(0,0,0,0.18)", position: "relative" }}>
         {/* Header */}
         <div style={{ padding: "20px 24px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h3 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, margin: 0, fontSize: 20 }}>{property ? "Edit Property" : "Add Property"}</h3>
@@ -1367,6 +1410,12 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
               <label style={s.label}>Location *</label>
               <input type="text" value={form.location} onChange={e => set("location", e.target.value)} placeholder="Postcode or address" style={{ ...s.textInput, borderBottomColor: errors.location ? C.red : C.border }} />
               {errors.location && <div style={{ fontSize: 10, color: C.red, fontFamily: fonts.sans, marginTop: 3 }}>{errors.location}</div>}
+              {form.location && (
+                <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(form.location)}`} target="_blank" rel="noreferrer"
+                  style={{ display: "inline-block", marginTop: 5, fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.accent, textDecoration: "none" }}>
+                  Open in Google Maps ↗
+                </a>
+              )}
             </div>
           </div>
 
@@ -1437,19 +1486,44 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
 
           {/* Commute */}
           <div style={{ marginBottom: 16 }}>
-            <div style={{ ...s.sectionHead, marginTop: 8 }}>Commute to Work</div>
-            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr 1fr", gap: "16px 24px" }}>
+            <div style={{ ...s.sectionHead, marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>Commute to Work</span>
+              {workplaceAddress && form.location && (
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(workplaceAddress)}&destination=${encodeURIComponent(form.location)}`}
+                  target="_blank" rel="noreferrer"
+                  style={{ fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.accent, textDecoration: "none", textTransform: "none", letterSpacing: 0 }}
+                >
+                  Check route in Google Maps ↗
+                </a>
+              )}
+            </div>
+            <p style={{ fontSize: 11, fontFamily: fonts.serif, color: C.textLight, fontStyle: "italic", margin: "0 0 12px", lineHeight: 1.5 }}>
+              Open the Maps link above, find your distances, then enter them below.
+            </p>
+            {/* 4 travel modes */}
+            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: "12px 16px", marginBottom: 14 }}>
+              {[
+                { key: "_commute_walk",    label: "Walk",    icon: "🚶", placeholder: "e.g. 25 min" },
+                { key: "_commute_drive",   label: "Drive",   icon: "🚗", placeholder: "e.g. 18 min" },
+                { key: "_commute_cycle",   label: "Cycle",   icon: "🚲", placeholder: "e.g. 22 min" },
+                { key: "_commute_transit", label: "Transit", icon: "🚌", placeholder: "e.g. 35 min" },
+              ].map(({ key, label, icon, placeholder }) => (
+                <div key={key}>
+                  <label style={s.label}>{icon} {label}</label>
+                  <input type="text" value={form[key]} onChange={e => set(key, e.target.value)} placeholder={placeholder} style={s.textInput} />
+                </div>
+              ))}
+            </div>
+            {/* Costs */}
+            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: "12px 16px" }}>
               <div>
-                <label style={s.label}>Distance (miles)</label>
-                <input type="number" min={0} step={0.1} value={form._commute_distance} onChange={e => set("_commute_distance", e.target.value)} placeholder="e.g. 8.5" style={s.textInput} />
+                <label style={s.label}>🚗 Car cost per round trip (£)</label>
+                <input type="number" min={0} step={0.5} value={form._commute_petrol} onChange={e => set("_commute_petrol", e.target.value)} placeholder="e.g. 6.00" style={{ ...s.textInput, maxWidth: 160 }} />
               </div>
               <div>
-                <label style={s.label}>Car cost per round trip (£)</label>
-                <input type="number" min={0} step={0.5} value={form._commute_petrol} onChange={e => set("_commute_petrol", e.target.value)} placeholder="e.g. 6.00" style={s.textInput} />
-              </div>
-              <div>
-                <label style={s.label}>Public transport per round trip (£)</label>
-                <input type="number" min={0} step={0.5} value={form._commute_transport} onChange={e => set("_commute_transport", e.target.value)} placeholder="e.g. 9.40" style={s.textInput} />
+                <label style={s.label}>🚌 Public transport per round trip (£)</label>
+                <input type="number" min={0} step={0.5} value={form._commute_transport} onChange={e => set("_commute_transport", e.target.value)} placeholder="e.g. 9.40" style={{ ...s.textInput, maxWidth: 160 }} />
               </div>
             </div>
           </div>
@@ -1691,8 +1765,14 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpda
   if (!open) return null;
 
   return (
-    <div style={{ marginBottom: 24, border: `1px solid ${C.border}`, background: C.card }}>
-      <div style={{ padding: "4px 16px 20px" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1050, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onToggle}>
+      <div style={{ background: C.card, width: "100%", maxWidth: 560, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.22)", borderRadius: 4, position: "relative" }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: C.card, zIndex: 2 }}>
+          <h3 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, margin: 0, fontSize: 19 }}>Property Settings</h3>
+          <button onClick={onToggle} style={{ background: "none", border: "none", fontSize: 22, color: C.textLight, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+      <div style={{ padding: "4px 22px 22px" }}>
           {/* Workplace address */}
           <div style={{ marginTop: 16, marginBottom: 24 }}>
             <div style={s.sectionHead}>Workplace Address</div>
@@ -1762,6 +1842,7 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpda
             </div>
           </div>
         </div>
+      </div>
     </div>
   );
 }
@@ -2111,6 +2192,7 @@ export default function GaffTracker() {
           defaultListingType={activeTab}
           userId={user?.id}
           rates={rates}
+          workplaceAddress={workplaceAddress}
           onSave={() => { setDialogOpen(false); refresh(); }}
           onClose={() => setDialogOpen(false)}
           onOpenSettings={() => { setDialogOpen(false); setSettingsOpen(true); }}

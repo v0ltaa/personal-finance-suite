@@ -1,39 +1,52 @@
 import { useState } from "react";
-import { C, fonts } from "../lib/tokens";
+import { cn } from "../lib/utils";
 import Field from "./Field";
 
-export default function PresetSelector({ presets, value, onChange, mobile }) {
+export default function PresetSelector({ presets, value, onChange }) {
   const [custom, setCustom] = useState(false);
   const active = presets.find((p) => p.value === value);
+
   return (
-    <div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-        {presets.map((p) => (
-          <button key={p.label} onClick={() => { onChange(p.value); setCustom(false); }} style={{
-            padding: mobile ? "8px 12px" : "8px 18px",
-            border: `1.5px solid ${!custom && value === p.value ? C.text : C.border}`,
-            borderRadius: 0, background: !custom && value === p.value ? C.text : "transparent",
-            color: !custom && value === p.value ? C.bg : C.textMid,
-            fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: fonts.sans,
-            letterSpacing: "0.04em", textTransform: "uppercase", transition: "all 0.15s",
-          }}>{p.label}</button>
-        ))}
-        <button onClick={() => setCustom(true)} style={{
-          padding: mobile ? "8px 12px" : "8px 18px",
-          border: `1.5px solid ${custom ? C.accent : C.border}`,
-          borderRadius: 0, background: custom ? C.accentLight : "transparent",
-          color: custom ? C.accent : C.textFaint,
-          fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: fonts.sans,
-          letterSpacing: "0.04em", textTransform: "uppercase",
-        }}>Custom</button>
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-1.5">
+        {presets.map((p) => {
+          const isActive = !custom && value === p.value;
+          return (
+            <button
+              key={p.label}
+              onClick={() => { onChange(p.value); setCustom(false); }}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide transition-all duration-150 border",
+                isActive
+                  ? "bg-foreground text-background border-foreground"
+                  : "bg-transparent text-muted-foreground border-border hover:border-foreground/40 hover:text-foreground"
+              )}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+        <button
+          onClick={() => setCustom(true)}
+          className={cn(
+            "px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide transition-all duration-150 border",
+            custom
+              ? "bg-brand/10 text-brand border-brand/40"
+              : "bg-transparent text-muted-foreground border-border hover:text-foreground"
+          )}
+        >
+          Custom
+        </button>
       </div>
+
       {active && !custom && (
-        <div style={{ fontSize: 12, color: C.textLight, fontFamily: fonts.serif, fontStyle: "italic" }}>
+        <p className="text-xs font-serif italic text-muted-foreground">
           {active.desc} — {active.value}% p.a.
-        </div>
+        </p>
       )}
+
       {custom && (
-        <div style={{ maxWidth: 160 }}>
+        <div className="max-w-[160px]">
           <Field label="Custom rate" suffix="% p.a." value={value} onChange={onChange} />
         </div>
       )}

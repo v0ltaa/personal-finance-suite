@@ -1,204 +1,169 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { C, fonts } from "./lib/tokens";
 import { useTheme } from "./lib/theme";
 import { useIsMobile, useAuth } from "./lib/hooks";
 import { uploadAvatar, getAvatarUrl } from "./lib/supabase";
 import { SUPPORTED_CURRENCIES, currencySymbol, getDisplayCurrency, setDisplayCurrency } from "./lib/currency";
 import AuthModal from "./components/AuthModal";
 import ScenarioManager from "./components/ScenarioManager";
+import { Button } from "./components/ui/button";
+import { Select } from "./components/ui/select";
+import { cn } from "./lib/utils";
+import {
+  ListFilter, User, LogOut,
+  BarChart2, Home, Map, Calculator, Layers, Wallet
+} from "lucide-react";
 
 const modules = [
-  { key: "gaffTracker", label: "Property Tracker",         path: "/gaff",    group: "property" },
-  { key: "comparison",  label: "Property Comparison",      path: "/compare", group: "property" },
-  { key: "buyVsRent",   label: "Buy Scenario",             path: "/" },
-  { key: "sandbox",     label: "Rent vs Buy",              path: "/sandbox" },
-  { key: "financeTracker", label: "Personal Finance Tracker", path: "/finance" },
-  { key: "mapView",     label: "Map View",                 path: "/map" },
+  { key: "gaffTracker",    label: "Properties",             path: "/gaff",    icon: Home },
+  { key: "comparison",     label: "Comparison",             path: "/compare", icon: Layers },
+  { key: "buyVsRent",      label: "Buy Scenario",           path: "/",        icon: Calculator },
+  { key: "sandbox",        label: "Rent vs Buy",            path: "/sandbox", icon: BarChart2 },
+  { key: "financeTracker", label: "Budget Tracker",         path: "/finance", icon: Wallet },
+  { key: "mapView",        label: "Map",                    path: "/map",     icon: Map },
 ];
 
 export default function App() {
   const mobile = useIsMobile();
   const auth = useAuth();
-  const { theme, toggleTheme } = useTheme();
-
-  // Keep body background in sync
-  useEffect(() => { document.body.style.background = C.bg; }, [theme]);
+  useTheme(); // ensures ThemeProvider runs its effect
   const navigate = useNavigate();
   const location = useLocation();
+
   const [showAuth, setShowAuth] = useState(false);
   const [showScenarios, setShowScenarios] = useState(false);
   const [displayCurrency, setDisplayCurrencyState] = useState(getDisplayCurrency);
-  const [defaultPropTab, setDefaultPropTabState] = useState(() => localStorage.getItem("property_default_tab") || "rent");
   const fileInputRef = useRef(null);
 
   const handleCurrencyChange = (code) => {
     setDisplayCurrency(code);
     setDisplayCurrencyState(code);
-    // Propagate via storage event so GaffTracker re-reads it
     window.dispatchEvent(new StorageEvent("storage", { key: "display_currency", newValue: code }));
-  };
-
-  const handleDefaultPropTabChange = (tab) => {
-    localStorage.setItem("property_default_tab", tab);
-    setDefaultPropTabState(tab);
-    window.dispatchEvent(new StorageEvent("storage", { key: "property_default_tab", newValue: tab }));
   };
 
   const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !auth.user) return;
     await uploadAvatar(auth.user.id, file);
-    // Force refresh user metadata
     window.location.reload();
   };
 
   const currentPath = location.pathname;
+  const isFullWidth = currentPath === "/map" || currentPath === "/compare";
+
+  const avatarUrl = auth.user ? getAvatarUrl(auth.user) : null;
+  const avatarInitial = auth.user
+    ? (auth.user.user_metadata?.display_name?.[0] || auth.user.email?.[0] || "?").toUpperCase()
+    : null;
 
   return (
-    <div style={{ background: C.bg, minHeight: "100vh", fontFamily: fonts.sans }}>
-      {/* Banner Bar */}
-      <div style={{
-        background: C.card, borderBottom: `1.5px solid ${C.border}`,
-        padding: mobile ? "14px 16px" : "16px 32px",
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        position: "sticky", top: 0, zIndex: 100,
-      }}>
-        <div onClick={() => navigate("/")} style={{
-          fontSize: mobile ? 20 : 26, fontFamily: fonts.serif, fontWeight: 400,
-          color: C.text, letterSpacing: "-0.02em", cursor: "pointer",
-        }}>
-          Personal Finance Suite
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {/* Currency selector */}
-          <select
-            value={displayCurrency}
-            onChange={(e) => handleCurrencyChange(e.target.value)}
-            title="Display currency for property prices"
-            style={{
-              border: `1.5px solid ${C.border}`, background: "transparent",
-              fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.textMid,
-              padding: "5px 8px", cursor: "pointer", outline: "none",
-            }}
+    <div className="min-h-screen bg-background font-sans">
+      {/* ── Top Header ── */}
+      <header className="sticky top-0 z-50 bg-card border-b border-border">
+        <div className="flex items-center justify-between px-4 sm:px-6 h-14">
+          {/* Logo */}
+          <button
+            onClick={() => navigate("/")}
+            className="font-serif text-xl sm:text-2xl text-foreground tracking-tight hover:text-brand transition-colors duration-150"
           >
-            {SUPPORTED_CURRENCIES.map((code) => (
-              <option key={code} value={code}>{currencySymbol(code)} {code}</option>
-            ))}
-          </select>
-          {/* Default property tab */}
-          <select
-            value={defaultPropTab}
-            onChange={(e) => handleDefaultPropTabChange(e.target.value)}
-            title="Properties: show Rent or Buy listings first"
-            style={{
-              border: `1.5px solid ${C.border}`, background: "transparent",
-              fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.textMid,
-              padding: "5px 8px", cursor: "pointer", outline: "none",
-            }}
-          >
-            <option value="rent">Props: Rent</option>
-            <option value="buy">Props: Buy</option>
-          </select>
-          {/* Theme toggle */}
-          <button title={theme === "dark" ? "Switch to light" : "Switch to dark"} onClick={toggleTheme} style={{
-            width: 36, height: 36, borderRadius: 8, border: `1.5px solid ${C.border}`,
-            background: "transparent", cursor: "pointer", display: "flex",
-            alignItems: "center", justifyContent: "center", color: C.textMid,
-            transition: "color 0.2s, border-color 0.2s",
-          }}>
-            {theme === "dark"
-              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-              : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            }
+            Personal Finance Suite
           </button>
-          {/* Scenario icon */}
-          <button title="Scenarios" onClick={() => {
-            if (!auth.user) setShowAuth(true);
-            else setShowScenarios(true);
-          }} style={{
-            width: 36, height: 36, borderRadius: 8, border: `1.5px solid ${C.border}`,
-            background: "transparent", cursor: "pointer", display: "flex",
-            alignItems: "center", justifyContent: "center", color: C.textMid,
-          }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="8" cy="6" r="2" fill="currentColor"/><circle cx="16" cy="12" r="2" fill="currentColor"/><circle cx="10" cy="18" r="2" fill="currentColor"/></svg>
-          </button>
-          {/* User icon / auth */}
-          {auth.user ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} />
-              <div onClick={() => fileInputRef.current?.click()} title="Click to change avatar" style={{
-                width: 30, height: 30, borderRadius: "50%", cursor: "pointer",
-                background: getAvatarUrl(auth.user) ? `url(${getAvatarUrl(auth.user)}) center/cover` : C.accent,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 12, fontWeight: 700, color: "#fff", fontFamily: fonts.sans,
-                border: `2px solid ${C.border}`, flexShrink: 0,
-              }}>
-                {!getAvatarUrl(auth.user) && (auth.user.user_metadata?.display_name?.[0] || auth.user.email?.[0] || "?").toUpperCase()}
+
+          {/* Right controls */}
+          <div className="flex items-center gap-1.5">
+            {/* Currency picker */}
+            <Select
+              value={displayCurrency}
+              onChange={(e) => handleCurrencyChange(e.target.value)}
+              title="Display currency"
+              className="w-auto text-xs h-8 pr-7 pl-2.5"
+            >
+              {SUPPORTED_CURRENCIES.map((code) => (
+                <option key={code} value={code}>{currencySymbol(code)} {code}</option>
+              ))}
+            </Select>
+
+            {/* Scenarios */}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => auth.user ? setShowScenarios(true) : setShowAuth(true)}
+              title="Scenarios"
+            >
+              <ListFilter size={15} />
+            </Button>
+
+            {/* Auth */}
+            {auth.user ? (
+              <div className="flex items-center gap-2 ml-1">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarUpload}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Change avatar"
+                  className="w-8 h-8 rounded-full border-2 border-border overflow-hidden flex items-center justify-center text-xs font-bold text-white bg-brand hover:ring-2 hover:ring-brand/50 transition-all"
+                  style={avatarUrl ? { backgroundImage: `url(${avatarUrl})`, backgroundSize: "cover" } : {}}
+                >
+                  {!avatarUrl && avatarInitial}
+                </button>
+                {!mobile && (
+                  <span className="text-xs text-muted-foreground max-w-[100px] truncate">
+                    {auth.user.user_metadata?.display_name || auth.user.email}
+                  </span>
+                )}
+                <Button variant="ghost" size="icon-sm" onClick={auth.signOut} title="Sign out">
+                  <LogOut size={14} />
+                </Button>
               </div>
-              <span style={{ fontSize: 11, color: C.textMid, fontFamily: fonts.sans, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {auth.user.user_metadata?.display_name || auth.user.email}
-              </span>
-              <button onClick={auth.signOut} style={{
-                padding: "6px 12px", border: `1px solid ${C.border}`, borderRadius: 0,
-                background: "transparent", color: C.textLight, fontSize: 10,
-                fontWeight: 600, cursor: "pointer", fontFamily: fonts.sans, textTransform: "uppercase",
-              }}>Out</button>
-            </div>
-          ) : (
-            <button title="Sign In" onClick={() => setShowAuth(true)} style={{
-              width: 36, height: 36, borderRadius: 8, border: `1.5px solid ${C.border}`,
-              background: "transparent", cursor: "pointer", display: "flex",
-              alignItems: "center", justifyContent: "center", color: C.textMid,
-            }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>
-            </button>
-          )}
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setShowAuth(true)}
+                title="Sign in"
+              >
+                <User size={15} />
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Module Tabs */}
-      <div style={{
-        background: C.card, borderBottom: `1.5px solid ${C.border}`,
-        padding: mobile ? "0 16px" : "0 32px",
-        display: "flex", gap: 0, overflowX: "auto",
-      }}>
-        {modules.map((m) => {
-          const isActive = m.path === currentPath || (m.path === "/" && currentPath === "");
-          const isDisabled = m.path === null;
-          const isPropertyGroup = m.group === "property";
-          return (
-            <button key={m.key} onClick={() => !isDisabled && navigate(m.path)} style={{
-              padding: mobile ? "14px 16px" : "14px 24px",
-              border: "none",
-              borderBottom: isActive ? `3px solid ${C.accent}` : "3px solid transparent",
-              borderTop: isPropertyGroup ? `2px solid ${C.border}` : "2px solid transparent",
-              background: isPropertyGroup ? C.accentLight : "transparent",
-              cursor: isDisabled ? "default" : "pointer",
-              color: isActive ? C.text : C.textLight,
-              fontSize: mobile ? 12 : 14,
-              fontWeight: isActive ? 600 : 500,
-              fontFamily: fonts.sans, whiteSpace: "nowrap",
-              transition: "all 0.15s",
-              opacity: isDisabled ? 0.5 : 1,
-            }}>
-              {m.label}
-              {isDisabled && <span style={{ fontSize: 9, marginLeft: 6, color: C.textFaint, fontWeight: 400 }}>Soon</span>}
-            </button>
-          );
-        })}
-      </div>
+        {/* ── Navigation tabs ── */}
+        <nav className="flex overflow-x-auto scrollbar-thin px-4 sm:px-6 border-t border-border">
+          {modules.map((m) => {
+            const isActive = m.path === currentPath || (m.path === "/" && currentPath === "");
+            const Icon = m.icon;
+            return (
+              <button
+                key={m.key}
+                onClick={() => navigate(m.path)}
+                className={cn(
+                  "flex items-center gap-1.5 whitespace-nowrap px-4 py-3 text-sm font-medium",
+                  "border-b-2 transition-all duration-150 -mb-px",
+                  isActive
+                    ? "border-brand text-brand"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                )}
+              >
+                <Icon size={14} />
+                {m.label}
+              </button>
+            );
+          })}
+        </nav>
+      </header>
 
-      {/* Page Content */}
-      {(currentPath === "/map" || currentPath === "/compare") ? (
+      {/* ── Page content ── */}
+      <main className={isFullWidth ? "" : "max-w-5xl mx-auto px-4 sm:px-6 py-8"}>
         <Outlet />
-      ) : (
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: mobile ? "32px 16px" : "48px 32px" }}>
-          <Outlet />
-        </div>
-      )}
+      </main>
 
-      {/* Modals */}
+      {/* ── Modals ── */}
       {showAuth && <AuthModal onClose={() => setShowAuth(false)} auth={auth} />}
       {showScenarios && <ScenarioManager onClose={() => setShowScenarios(false)} />}
     </div>

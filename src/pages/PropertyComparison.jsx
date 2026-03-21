@@ -1,7 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
-import { C, fonts, fmt } from "../lib/tokens";
+import { fmt } from "../lib/tokens";
 import { useIsMobile, useAuth } from "../lib/hooks";
 import { loadProperties, loadCustomFields } from "../lib/supabase";
+import { cn } from "../lib/utils";
+import { Button } from "../components/ui/button";
+import { Dialog, DialogHeader, DialogTitle, DialogBody, DialogFooter } from "../components/ui/dialog";
+import { Select } from "../components/ui/select";
+import { Input } from "../components/ui/input";
 
 // ─── Standard column definitions ─────────────────────────────────────────────
 const STANDARD_COLS = [
@@ -24,15 +29,15 @@ function Check({ checked, onChange }) {
   return (
     <div
       onClick={onChange}
-      style={{
-        width: 16, height: 16, flexShrink: 0, cursor: "pointer",
-        border: `1.5px solid ${checked ? C.text : C.border}`,
-        background: checked ? C.text : "transparent",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}
+      className={cn(
+        "w-4 h-4 shrink-0 cursor-pointer flex items-center justify-center transition-colors",
+        checked
+          ? "bg-foreground border-foreground border-[1.5px]"
+          : "bg-transparent border-border border-[1.5px]"
+      )}
     >
       {checked && (
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={C.bg} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="text-background">
           <polyline points="20 6 9 17 4 12" />
         </svg>
       )}
@@ -56,42 +61,26 @@ function CustomiseDialog({
   const apply = () => { onHiddenColsChange(localCols); onHiddenPropsChange(localProps); onClose(); };
 
   const SHead = ({ children }) => (
-    <div style={{
-      fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", fontWeight: 700,
-      fontFamily: fonts.sans, color: C.accent,
-      borderBottom: `1px solid ${C.border}`, paddingBottom: 8, marginBottom: 14,
-    }}>
+    <div className="text-[9px] tracking-[0.2em] uppercase font-bold text-brand border-b border-border pb-2 mb-3.5">
       {children}
     </div>
   );
 
   return (
-    <div
-      onClick={e => e.target === e.currentTarget && onClose()}
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000,
-        display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
-      }}
-    >
-      <div style={{
-        background: C.card, maxWidth: 580, width: "100%", maxHeight: "88vh",
-        overflowY: "auto", padding: "32px 36px", position: "relative",
-      }}>
-        <button
-          onClick={onClose}
-          style={{ position: "absolute", top: 16, right: 20, background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.textMid, lineHeight: 1 }}
-        >×</button>
+    <Dialog open onClose={onClose} className="max-w-lg">
+      <DialogHeader onClose={onClose}>
+        <DialogTitle className="text-xl font-normal">Customise View</DialogTitle>
+      </DialogHeader>
 
-        <h3 style={{ fontFamily: fonts.serif, fontWeight: 400, fontSize: 22, margin: "0 0 28px" }}>Customise View</h3>
-
+      <DialogBody className="space-y-7">
         {/* Standard columns */}
-        <div style={{ marginBottom: 28 }}>
+        <div>
           <SHead>Standard Columns</SHead>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="grid grid-cols-2 gap-2.5">
             {standardCols.map(col => (
-              <label key={col.key} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+              <label key={col.key} className="flex items-center gap-2.5 cursor-pointer">
                 <Check checked={!localCols.has(col.key)} onChange={() => toggleCol(col.key)} />
-                <span style={{ fontFamily: fonts.sans, fontSize: 13, color: C.text }}>{col.label}</span>
+                <span className="text-sm text-foreground">{col.label}</span>
               </label>
             ))}
           </div>
@@ -99,15 +88,15 @@ function CustomiseDialog({
 
         {/* Custom fields */}
         {customFields.length > 0 && (
-          <div style={{ marginBottom: 28 }}>
+          <div>
             <SHead>Custom Fields</SHead>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div className="grid grid-cols-2 gap-2.5">
               {customFields.map(f => (
-                <label key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <label key={f.id} className="flex items-center gap-2.5 cursor-pointer">
                   <Check checked={!localCols.has(`cf_${f.id}`)} onChange={() => toggleCol(`cf_${f.id}`)} />
-                  <span style={{ fontFamily: fonts.sans, fontSize: 13, color: C.text }}>
+                  <span className="text-sm text-foreground">
                     {f.name}
-                    <span style={{ fontSize: 10, color: C.textFaint, marginLeft: 4 }}>({f.field_type})</span>
+                    <span className="text-[10px] text-muted-foreground ml-1">({f.field_type})</span>
                   </span>
                 </label>
               ))}
@@ -117,17 +106,17 @@ function CustomiseDialog({
 
         {/* Properties */}
         {allProperties.length > 0 && (
-          <div style={{ marginBottom: 28 }}>
+          <div>
             <SHead>Properties Shown</SHead>
-            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            <div className="flex flex-col gap-[9px]">
               {allProperties.map(p => (
-                <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <label key={p.id} className="flex items-center gap-2.5 cursor-pointer">
                   <Check checked={!localProps.has(p.id)} onChange={() => toggleProp(p.id)} />
-                  <span style={{ fontFamily: fonts.sans, fontSize: 13, color: C.text, flex: 1 }}>{p.name}</span>
+                  <span className="text-sm text-foreground flex-1">{p.name}</span>
                   {p.location && (
-                    <span style={{ fontSize: 11, color: C.textFaint, fontFamily: fonts.sans }}>{p.location}</span>
+                    <span className="text-[11px] text-muted-foreground">{p.location}</span>
                   )}
-                  <span style={{ fontSize: 11, fontFamily: fonts.sans, color: C.textMid, minWidth: 60, textAlign: "right" }}>
+                  <span className="text-[11px] text-muted-foreground min-w-[60px] text-right">
                     {p.price ? fmt(p.price) : "—"}
                   </span>
                 </label>
@@ -135,19 +124,13 @@ function CustomiseDialog({
             </div>
           </div>
         )}
+      </DialogBody>
 
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", borderTop: `1px solid ${C.border}`, paddingTop: 20 }}>
-          <button
-            onClick={onClose}
-            style={{ padding: "8px 20px", border: `1.5px solid ${C.border}`, background: "transparent", color: C.textMid, fontFamily: fonts.sans, fontSize: 12, cursor: "pointer" }}
-          >Cancel</button>
-          <button
-            onClick={apply}
-            style={{ padding: "8px 24px", border: "none", background: C.text, color: C.bg, fontFamily: fonts.sans, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-          >Apply</button>
-        </div>
-      </div>
-    </div>
+      <DialogFooter>
+        <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+        <Button variant="default" size="sm" onClick={apply}>Apply</Button>
+      </DialogFooter>
+    </Dialog>
   );
 }
 
@@ -174,60 +157,74 @@ function SortFilterBar({ customFields, sortBy, onSort, filters, onFilter }) {
     ]),
   ];
 
-  const inputStyle = {
-    border: `1.5px solid ${C.border}`, background: C.card, padding: "5px 8px",
-    fontFamily: fonts.sans, fontSize: 12, color: C.text, outline: "none", width: 80,
-  };
   const hasFilters = Object.values(filters).some(v => v !== "" && v !== undefined);
 
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <select
+    <div className="mb-4">
+      <div className="flex gap-2 items-center flex-wrap">
+        <Select
           value={sortBy}
           onChange={e => onSort(e.target.value)}
-          style={{ border: `1.5px solid ${C.border}`, background: C.card, padding: "6px 10px", fontFamily: fonts.sans, fontSize: 11, color: C.text, outline: "none", cursor: "pointer" }}
+          className="w-auto text-[11px]"
         >
           {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        </Select>
 
-        <button
+        <Button
+          variant={open ? "default" : "outline"}
+          size="sm"
           onClick={() => setOpen(v => !v)}
-          style={{
-            padding: "6px 12px", border: `1.5px solid ${open ? C.text : C.border}`,
-            background: open ? C.text : "transparent", color: open ? C.bg : C.textMid,
-            fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: fonts.sans,
-          }}
         >
           Filters {open ? "▴" : "▾"}
-        </button>
+        </Button>
 
         {hasFilters && (
           <button
             onClick={() => onFilter({})}
-            style={{ fontSize: 10, background: "transparent", border: "none", color: C.accent, cursor: "pointer", fontFamily: fonts.sans, fontWeight: 600 }}
-          >Clear filters</button>
+            className="text-[10px] bg-transparent border-none text-brand cursor-pointer font-semibold"
+          >
+            Clear filters
+          </button>
         )}
       </div>
 
       {open && (
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 10, padding: "12px 16px", background: C.card, border: `1px solid ${C.borderLight}` }}>
+        <div className="flex gap-4 flex-wrap mt-2.5 px-4 py-3 bg-card border border-border/50 rounded-lg">
           {[["Min beds", "minBeds"], ["Max beds", "maxBeds"], ["Max price £", "maxPrice"]].map(([label, key]) => (
             <div key={key}>
-              <div style={{ fontSize: 9, fontFamily: fonts.sans, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textLight, marginBottom: 4 }}>{label}</div>
-              <input type="number" min={0} value={filters[key] || ""} onChange={e => onFilter({ ...filters, [key]: e.target.value })} style={inputStyle} />
+              <div className="text-[9px] font-bold tracking-[0.1em] uppercase text-muted-foreground mb-1">{label}</div>
+              <Input
+                type="number"
+                min={0}
+                value={filters[key] || ""}
+                onChange={e => onFilter({ ...filters, [key]: e.target.value })}
+                className="w-20 h-8 text-xs"
+              />
             </div>
           ))}
           {numberFields.map(f => (
             <div key={f.id}>
-              <div style={{ fontSize: 9, fontFamily: fonts.sans, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textLight, marginBottom: 4 }}>Min {f.name}</div>
-              <input type="number" min={0} value={filters[`num_${f.id}`] || ""} onChange={e => onFilter({ ...filters, [`num_${f.id}`]: e.target.value })} style={inputStyle} />
+              <div className="text-[9px] font-bold tracking-[0.1em] uppercase text-muted-foreground mb-1">Min {f.name}</div>
+              <Input
+                type="number"
+                min={0}
+                value={filters[`num_${f.id}`] || ""}
+                onChange={e => onFilter({ ...filters, [`num_${f.id}`]: e.target.value })}
+                className="w-20 h-8 text-xs"
+              />
             </div>
           ))}
           {rankingFields.map(f => (
             <div key={f.id}>
-              <div style={{ fontSize: 9, fontFamily: fonts.sans, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textLight, marginBottom: 4 }}>Min {f.name}</div>
-              <input type="number" min={1} max={10} value={filters[`rank_${f.id}`] || ""} onChange={e => onFilter({ ...filters, [`rank_${f.id}`]: e.target.value })} style={inputStyle} />
+              <div className="text-[9px] font-bold tracking-[0.1em] uppercase text-muted-foreground mb-1">Min {f.name}</div>
+              <Input
+                type="number"
+                min={1}
+                max={10}
+                value={filters[`rank_${f.id}`] || ""}
+                onChange={e => onFilter({ ...filters, [`rank_${f.id}`]: e.target.value })}
+                className="w-20 h-8 text-xs"
+              />
             </div>
           ))}
         </div>
@@ -239,60 +236,57 @@ function SortFilterBar({ customFields, sortBy, onSort, filters, onFilter }) {
 // ─── Standard cell renderer ───────────────────────────────────────────────────
 function StdCell({ colKey, property: p }) {
   if (colKey === "photo") {
-    if (!p.photo_url) return <span style={{ color: C.textFaint, fontSize: 12 }}>—</span>;
-    return <img src={p.photo_url} alt="" style={{ width: 52, height: 40, objectFit: "cover", display: "block" }} />;
+    if (!p.photo_url) return <span className="text-muted-foreground text-xs">—</span>;
+    return <img src={p.photo_url} alt="" className="w-12 h-10 object-cover block" />;
   }
   if (colKey === "property_type") {
-    return <span style={{ fontFamily: fonts.sans, fontSize: 12 }}>{p.property_type === "house" ? "House" : "Apartment"}</span>;
+    return <span className="text-xs">{p.property_type === "house" ? "House" : "Apartment"}</span>;
   }
   if (colKey === "location") {
-    return <span style={{ fontFamily: fonts.sans, fontSize: 12, color: C.textMid }}>{p.location || "—"}</span>;
+    return <span className="text-xs text-muted-foreground">{p.location || "—"}</span>;
   }
   if (colKey === "price") {
     return (
-      <span style={{ fontFamily: fonts.serif, fontSize: 14, fontWeight: 700, color: C.text }}>
+      <span className="text-sm font-bold text-foreground">
         {p.price ? fmt(p.price) : "—"}
       </span>
     );
   }
   if (colKey === "bedrooms") {
-    return <span style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600 }}>{p.bedrooms ?? "—"}</span>;
+    return <span className="text-[13px] font-semibold">{p.bedrooms ?? "—"}</span>;
   }
   if (colKey === "bathrooms") {
-    return <span style={{ fontFamily: fonts.sans, fontSize: 13 }}>{p.bathrooms ?? "—"}</span>;
+    return <span className="text-[13px]">{p.bathrooms ?? "—"}</span>;
   }
   if (colKey === "size") {
-    if (!p.size) return <span style={{ color: C.textFaint, fontSize: 12 }}>—</span>;
+    if (!p.size) return <span className="text-muted-foreground text-xs">—</span>;
     return (
-      <span style={{ fontFamily: fonts.sans, fontSize: 12 }}>
+      <span className="text-xs">
         {Number(p.size).toLocaleString("en-GB")} {p.size_unit || "sqft"}
       </span>
     );
   }
   if (colKey === "website_link") {
-    if (!p.website_link) return <span style={{ color: C.textFaint, fontSize: 12 }}>—</span>;
+    if (!p.website_link) return <span className="text-muted-foreground text-xs">—</span>;
     let domain = "";
     try { domain = new URL(p.website_link).hostname; } catch {}
     return (
-      <a href={p.website_link} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
-        <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`} width={14} height={14} alt="" style={{ display: "block" }} />
-        <span style={{ fontSize: 11, color: C.accent, fontFamily: fonts.sans }}>View</span>
+      <a href={p.website_link} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 no-underline">
+        <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`} width={14} height={14} alt="" className="block" />
+        <span className="text-[11px] text-brand">View</span>
       </a>
     );
   }
   if (colKey === "notes") {
     return (
-      <span style={{
-        fontFamily: fonts.serif, fontSize: 12, color: C.textMid, fontStyle: "italic",
-        maxWidth: 200, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-      }}>
+      <span className="text-xs text-muted-foreground italic max-w-[200px] block overflow-hidden text-ellipsis whitespace-nowrap">
         {p.notes || "—"}
       </span>
     );
   }
   if (colKey === "created_at") {
     return (
-      <span style={{ fontFamily: fonts.sans, fontSize: 11, color: C.textFaint }}>
+      <span className="text-[11px] text-muted-foreground">
         {new Date(p.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}
       </span>
     );
@@ -307,7 +301,7 @@ function CfCell({ field, property }) {
   if (field.field_type === "checkbox") {
     const checked = !!val;
     return (
-      <span style={{ fontSize: 15, color: checked ? C.green : C.textFaint, fontWeight: 600 }}>
+      <span className={cn("text-[15px] font-semibold", checked ? "text-green-600" : "text-muted-foreground")}>
         {checked ? "✓" : "✗"}
       </span>
     );
@@ -315,11 +309,11 @@ function CfCell({ field, property }) {
   if (field.field_type === "ranking") {
     const v = val || 0;
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 90 }}>
-        <div style={{ flex: 1, height: 4, background: C.border, position: "relative", maxWidth: 60 }}>
-          <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${v * 10}%`, background: C.accent }} />
+      <div className="flex items-center gap-2 min-w-[90px]">
+        <div className="flex-1 h-1 bg-border relative max-w-[60px]">
+          <div className="absolute left-0 top-0 h-full bg-brand" style={{ width: `${v * 10}%` }} />
         </div>
-        <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, minWidth: 18, color: v > 0 ? C.text : C.textFaint }}>
+        <span className={cn("text-xs font-semibold min-w-[18px]", v > 0 ? "text-foreground" : "text-muted-foreground")}>
           {v > 0 ? v : "—"}
         </span>
       </div>
@@ -327,38 +321,35 @@ function CfCell({ field, property }) {
   }
   if (field.field_type === "number") {
     return (
-      <span style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600 }}>
+      <span className="text-[13px] font-semibold">
         {val !== undefined && val !== "" && val !== null ? Number(val).toLocaleString("en-GB") : "—"}
       </span>
     );
   }
   if (field.field_type === "maybe") {
-    const colors = { yes: C.green, maybe: C.amber, no: C.red };
+    const colorMap = { yes: "text-green-600", maybe: "text-amber-500", no: "text-red-500" };
     return val
-      ? <span style={{ fontFamily: fonts.sans, fontSize: 12, fontWeight: 700, color: colors[val] || C.textMid, textTransform: "uppercase", letterSpacing: "0.04em" }}>{val}</span>
-      : <span style={{ color: C.textFaint }}>—</span>;
+      ? <span className={cn("text-xs font-bold uppercase tracking-[0.04em]", colorMap[val] || "text-muted-foreground")}>{val}</span>
+      : <span className="text-muted-foreground">—</span>;
   }
   if (field.field_type === "distance") {
     const hasVal = val && typeof val === "object" && val.n !== "" && val.n != null;
     return (
-      <span style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600 }}>
+      <span className="text-[13px] font-semibold">
         {hasVal ? `${val.n} ${val.u || "mi"}` : "—"}
       </span>
     );
   }
   if (field.field_type === "cost") {
     return (
-      <span style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600 }}>
+      <span className="text-[13px] font-semibold">
         {val !== undefined && val !== "" && val !== null ? `£${Number(val).toLocaleString("en-GB")}` : "—"}
       </span>
     );
   }
   // text
   return (
-    <span style={{
-      fontFamily: fonts.sans, fontSize: 12, color: C.textMid,
-      maxWidth: 140, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-    }}>
+    <span className="text-xs text-muted-foreground max-w-[140px] block overflow-hidden text-ellipsis whitespace-nowrap">
       {val || "—"}
     </span>
   );
@@ -504,28 +495,11 @@ export default function PropertyComparison() {
     return !!COL_SORT_KEYS[colKey];
   };
 
-  // Styles
-  const thBase = {
-    padding: "9px 16px",
-    fontFamily: fonts.sans, fontSize: 9, fontWeight: 700,
-    letterSpacing: "0.14em", textTransform: "uppercase", color: C.textLight,
-    background: C.bg, borderBottom: `1.5px solid ${C.border}`,
-    whiteSpace: "nowrap", textAlign: "left",
-    position: "sticky", top: 0, zIndex: 2,
-  };
-  const tdBase = {
-    padding: "12px 16px",
-    borderBottom: `1px solid ${C.borderLight}`,
-    verticalAlign: "middle",
-  };
-  const nameThStyle = { ...thBase, position: "sticky", top: 0, left: 0, zIndex: 3, minWidth: 180, borderRight: `1.5px solid ${C.border}` };
-  const nameTdBase  = { ...tdBase, position: "sticky", left: 0, zIndex: 1, minWidth: 180, borderRight: `1.5px solid ${C.border}` };
-
   if (!user) {
     return (
-      <div style={{ padding: mobile ? "32px 16px" : "48px 32px", textAlign: "center", paddingTop: 100 }}>
-        <h1 style={{ fontFamily: fonts.serif, fontWeight: 400, color: C.text, fontSize: 48, WebkitTextStroke: "1.5px " + C.text, WebkitTextFillColor: "transparent", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 16 }}>Comparison</h1>
-        <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic" }}>Sign in to compare properties.</p>
+      <div className={cn("text-center pt-24", mobile ? "px-4 py-8" : "px-8 py-12")}>
+        <h1 className="text-5xl font-normal text-foreground uppercase tracking-[0.04em] mb-4" style={{ WebkitTextStroke: "1.5px currentColor", WebkitTextFillColor: "transparent" }}>Comparison</h1>
+        <p className="text-muted-foreground italic">Sign in to compare properties.</p>
       </div>
     );
   }
@@ -534,31 +508,28 @@ export default function PropertyComparison() {
   const hiddenPropCount = hiddenProps.size;
 
   return (
-    <div style={{ padding: mobile ? "32px 16px" : "48px 32px" }}>
+    <div className={cn(mobile ? "px-4 py-8" : "px-8 py-12")}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
+      <div className="flex items-end justify-between mb-7 flex-wrap gap-3">
         <div>
-          <h1 style={{
-            fontFamily: fonts.serif, fontWeight: 400, color: C.text, margin: "0 0 6px",
-            fontSize: mobile ? 32 : 48,
-            WebkitTextStroke: "1.5px " + C.text, WebkitTextFillColor: "transparent",
-            textTransform: "uppercase", letterSpacing: "0.04em",
-          }}>
+          <h1
+            className={cn(
+              "font-normal text-foreground uppercase tracking-[0.04em] mb-1.5",
+              mobile ? "text-3xl" : "text-5xl"
+            )}
+            style={{ WebkitTextStroke: "1.5px currentColor", WebkitTextFillColor: "transparent" }}
+          >
             Comparison
           </h1>
-          <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: 0, fontSize: 14 }}>
+          <p className="text-muted-foreground italic m-0 text-sm">
             Side-by-side matrix of all your tracked properties.
           </p>
         </div>
-        <button
+        <Button
+          variant="default"
+          size="md"
           onClick={() => setShowDialog(true)}
-          style={{
-            padding: "10px 20px", border: "none", borderRadius: 24,
-            background: C.text, color: "#fff",
-            fontSize: 11, fontWeight: 700, fontFamily: fonts.sans, cursor: "pointer",
-            textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap",
-            display: "flex", alignItems: "center", gap: 8,
-          }}
+          className="rounded-full uppercase tracking-[0.06em] whitespace-nowrap gap-2"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
@@ -566,29 +537,30 @@ export default function PropertyComparison() {
           </svg>
           Customise
           {(hiddenColCount > 0 || hiddenPropCount > 0) && (
-            <span style={{
-              background: "#fff", color: C.text, fontSize: 9, fontWeight: 700,
-              padding: "1px 6px", borderRadius: 8, letterSpacing: 0,
-            }}>
+            <span className="bg-background text-foreground text-[9px] font-bold px-1.5 py-px rounded-full">
               {hiddenColCount + hiddenPropCount}
             </span>
           )}
-        </button>
+        </Button>
       </div>
 
       {/* Tabs + count */}
-      <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 20, borderBottom: `1.5px solid ${C.border}` }}>
+      <div className="flex items-center gap-0 mb-5 border-b-[1.5px] border-border">
         {[{ key: "rent", label: "Renting" }, { key: "buy", label: "Buying" }].map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
-            padding: "10px 24px", border: "none",
-            borderBottom: activeTab === t.key ? `3px solid ${C.accent}` : "3px solid transparent",
-            background: "transparent", cursor: "pointer",
-            color: activeTab === t.key ? C.text : C.textLight,
-            fontSize: 13, fontWeight: activeTab === t.key ? 600 : 400,
-            fontFamily: fonts.sans, marginBottom: -1.5,
-          }}>{t.label}</button>
+          <button
+            key={t.key}
+            onClick={() => setActiveTab(t.key)}
+            className={cn(
+              "px-6 py-2.5 border-none -mb-px cursor-pointer text-[13px] bg-transparent transition-colors",
+              activeTab === t.key
+                ? "border-b-[3px] border-brand text-foreground font-semibold"
+                : "border-b-[3px] border-transparent text-muted-foreground font-normal"
+            )}
+          >
+            {t.label}
+          </button>
         ))}
-        <span style={{ marginLeft: "auto", fontSize: 10, fontFamily: fonts.sans, color: C.textLight, alignSelf: "center", paddingRight: 2, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>
+        <span className="ml-auto text-[10px] text-muted-foreground self-center pr-0.5 tracking-[0.08em] uppercase font-semibold">
           {displayed.length} / {tabProperties.length}
         </span>
       </div>
@@ -602,24 +574,27 @@ export default function PropertyComparison() {
 
       {/* Empty states */}
       {loading && (
-        <div style={{ color: C.textLight, fontFamily: fonts.serif }}>Loading…</div>
+        <div className="text-muted-foreground italic">Loading…</div>
       )}
 
       {!loading && tabProperties.length === 0 && (
-        <div style={{ padding: "48px 24px", border: `1.5px dashed ${C.border}`, textAlign: "center" }}>
-          <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: 0 }}>
+        <div className="px-6 py-12 border-[1.5px] border-dashed border-border rounded-lg text-center">
+          <p className="text-muted-foreground italic m-0">
             No {activeTab} properties yet. Add some in Gaff Tracker to compare them here.
           </p>
         </div>
       )}
 
       {!loading && tabProperties.length > 0 && displayed.length === 0 && (
-        <div style={{ padding: "48px 24px", border: `1.5px dashed ${C.border}`, textAlign: "center" }}>
-          <p style={{ fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: 0 }}>
+        <div className="px-6 py-12 border-[1.5px] border-dashed border-border rounded-lg text-center">
+          <p className="text-muted-foreground italic m-0">
             No properties match the current filters or visibility settings.{" "}
             {hiddenPropCount > 0 && (
               <span>
-                <button onClick={() => setShowDialog(true)} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontFamily: fonts.serif, fontStyle: "italic", fontSize: "inherit", textDecoration: "underline" }}>
+                <button
+                  onClick={() => setShowDialog(true)}
+                  className="bg-none border-none text-brand cursor-pointer italic text-[length:inherit] underline"
+                >
                   Open Customise
                 </button>
                 {" "}to show hidden properties.
@@ -631,12 +606,14 @@ export default function PropertyComparison() {
 
       {/* Matrix table */}
       {!loading && displayed.length > 0 && (
-        <div style={{ overflowX: "auto", border: `1.5px solid ${C.border}` }}>
-          <table style={{ borderCollapse: "collapse", tableLayout: "auto" }}>
+        <div className="overflow-x-auto border border-border rounded-lg">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
                 {/* Sticky name header */}
-                <th style={nameThStyle}>Property</th>
+                <th className="px-4 py-3 text-left sticky top-0 left-0 z-[3] bg-muted text-[10px] uppercase tracking-widest font-semibold text-muted-foreground whitespace-nowrap min-w-[180px] border-r border-border border-b-[1.5px]">
+                  Property
+                </th>
 
                 {/* Standard columns */}
                 {visibleStdCols.map(col => {
@@ -646,12 +623,11 @@ export default function PropertyComparison() {
                     <th
                       key={col.key}
                       onClick={sortable ? () => handleColHeaderClick(col.key, null) : undefined}
-                      style={{
-                        ...thBase,
-                        cursor: sortable ? "pointer" : "default",
-                        color: indicator ? C.accent : C.textLight,
-                        userSelect: "none",
-                      }}
+                      className={cn(
+                        "px-4 py-3 text-left sticky top-0 z-[2] bg-muted text-[10px] uppercase tracking-widest font-semibold whitespace-nowrap border-b-[1.5px] border-border select-none",
+                        sortable ? "cursor-pointer" : "cursor-default",
+                        indicator ? "text-brand" : "text-muted-foreground"
+                      )}
                     >
                       {col.label}{indicator}
                     </th>
@@ -666,12 +642,11 @@ export default function PropertyComparison() {
                     <th
                       key={f.id}
                       onClick={sortable ? () => handleColHeaderClick(null, f) : undefined}
-                      style={{
-                        ...thBase,
-                        cursor: sortable ? "pointer" : "default",
-                        color: indicator ? C.accent : C.textLight,
-                        userSelect: "none",
-                      }}
+                      className={cn(
+                        "px-4 py-3 text-left sticky top-0 z-[2] bg-muted text-[10px] uppercase tracking-widest font-semibold whitespace-nowrap border-b-[1.5px] border-border select-none",
+                        sortable ? "cursor-pointer" : "cursor-default",
+                        indicator ? "text-brand" : "text-muted-foreground"
+                      )}
                     >
                       {f.name}{indicator}
                     </th>
@@ -680,39 +655,51 @@ export default function PropertyComparison() {
               </tr>
             </thead>
             <tbody>
-              {displayed.map((p, i) => {
-                const rowBg = i % 2 === 0 ? C.card : C.accentLight;
-                return (
-                  <tr key={p.id}>
-                    {/* Sticky name cell */}
-                    <td style={{ ...nameTdBase, background: rowBg }}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                        {p.photo_url && (
-                          <img src={p.photo_url} alt="" style={{ width: 48, height: 36, objectFit: "cover", display: "block", marginBottom: 4 }} />
-                        )}
-                        <span style={{ fontFamily: fonts.serif, fontSize: 14, color: C.text, lineHeight: 1.2 }}>{p.name}</span>
-                        {p.location && (
-                          <span style={{ fontFamily: fonts.sans, fontSize: 10, color: C.textLight }}>{p.location}</span>
-                        )}
-                      </div>
+              {displayed.map((p, i) => (
+                <tr key={p.id} className="border-b border-border hover:bg-muted/50 transition-colors">
+                  {/* Sticky name cell */}
+                  <td className={cn(
+                    "px-4 py-3 sticky left-0 z-10 min-w-[180px] border-r border-border",
+                    i % 2 === 0 ? "bg-card" : "bg-muted/30"
+                  )}>
+                    <div className="flex flex-col gap-0.5">
+                      {p.photo_url && (
+                        <img src={p.photo_url} alt="" className="w-12 h-9 object-cover block mb-1 rounded" />
+                      )}
+                      <span className="text-sm text-foreground leading-tight">{p.name}</span>
+                      {p.location && (
+                        <span className="text-[10px] text-muted-foreground">{p.location}</span>
+                      )}
+                    </div>
+                  </td>
+
+                  {/* Standard column cells */}
+                  {visibleStdCols.map(col => (
+                    <td
+                      key={col.key}
+                      className={cn(
+                        "px-4 py-3 text-foreground align-middle",
+                        i % 2 === 0 ? "bg-card" : "bg-muted/30"
+                      )}
+                    >
+                      <StdCell colKey={col.key} property={p} />
                     </td>
+                  ))}
 
-                    {/* Standard column cells */}
-                    {visibleStdCols.map(col => (
-                      <td key={col.key} style={{ ...tdBase, background: rowBg }}>
-                        <StdCell colKey={col.key} property={p} />
-                      </td>
-                    ))}
-
-                    {/* Custom field cells */}
-                    {visibleCfCols.map(f => (
-                      <td key={f.id} style={{ ...tdBase, background: rowBg }}>
-                        <CfCell field={f} property={p} />
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
+                  {/* Custom field cells */}
+                  {visibleCfCols.map(f => (
+                    <td
+                      key={f.id}
+                      className={cn(
+                        "px-4 py-3 text-foreground align-middle",
+                        i % 2 === 0 ? "bg-card" : "bg-muted/30"
+                      )}
+                    >
+                      <CfCell field={f} property={p} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

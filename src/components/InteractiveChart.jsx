@@ -5,35 +5,72 @@ import {
   BarElement, Filler, Tooltip, Legend,
 } from "chart.js";
 import zoomPlugin from "chartjs-plugin-zoom";
-import { C, fonts, fmtK } from "../lib/tokens";
+import { fmtK } from "../lib/tokens";
+import { cn } from "../lib/utils";
 
 ChartJS.register(
   CategoryScale, LinearScale, PointElement, LineElement,
   BarElement, Filler, Tooltip, Legend, zoomPlugin
 );
 
-// Annotation plugin for break-even line
+// Brand color resolved from CSS variable at runtime
+function getBrandColor() {
+  return getComputedStyle(document.documentElement).getPropertyValue("--brand").trim()
+    ? `hsl(${getComputedStyle(document.documentElement).getPropertyValue("--brand").trim()})`
+    : "#c26540";
+}
+
+function getChartColors() {
+  const style = getComputedStyle(document.documentElement);
+  return {
+    border: `hsl(${style.getPropertyValue("--border").trim()})`,
+    muted: `hsl(${style.getPropertyValue("--muted-foreground").trim()})`,
+    faint: `hsl(${style.getPropertyValue("--muted-foreground").trim()})`,
+    card: `hsl(${style.getPropertyValue("--card").trim()})`,
+    fg: `hsl(${style.getPropertyValue("--foreground").trim()})`,
+    brand: `hsl(${style.getPropertyValue("--brand").trim()})`,
+  };
+}
+
+function resolveColor(color) {
+  const match = color?.match(/^var\(--([^)]+)\)$/);
+  if (!match) return color;
+  const val = getComputedStyle(document.documentElement).getPropertyValue(`--${match[1]}`).trim();
+  return val ? `hsl(${val})` : color;
+}
+
+function withAlpha(color, alpha) {
+  if (color?.startsWith("hsl(")) {
+    return color.slice(0, -1) + ` / ${alpha})`;
+  }
+  if (color?.startsWith("#") && color.length === 7) {
+    return color + Math.round(alpha * 255).toString(16).padStart(2, "0");
+  }
+  return color;
+}
+
 const breakEvenPlugin = {
   id: "breakEvenLine",
   afterDraw(chart) {
     const meta = chart.options.plugins.breakEvenLine;
     if (!meta?.month || meta.month < 0) return;
-    const { ctx, chartArea: { top, bottom }, scales: { x } } = chart;
+    const { ctx, chartArea: { top }, scales: { x } } = chart;
     const xPos = x.getPixelForValue(meta.month);
     if (xPos < x.left || xPos > x.right) return;
+    const cc = getChartColors();
     ctx.save();
-    ctx.strokeStyle = C.accent;
+    ctx.strokeStyle = cc.brand;
     ctx.lineWidth = 1.5;
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
     ctx.moveTo(xPos, top);
-    ctx.lineTo(xPos, bottom);
+    ctx.lineTo(xPos, chart.chartArea.bottom);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = C.accent;
-    ctx.font = `600 11px ${fonts.sans}`;
+    ctx.fillStyle = cc.brand;
+    ctx.font = `600 11px "Instrument Sans", sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillText(meta.label || `Break-even`, xPos, top - 8);
+    ctx.fillText(meta.label || "Break-even", xPos, top - 8);
     ctx.restore();
   },
 };
@@ -47,6 +84,22 @@ function monthToDate(monthOffset) {
   const year = now.getFullYear() + Math.floor(m / 12);
   const month = ((m % 12) + 12) % 12;
   return `${MONTH_NAMES[month]} ${year}`;
+}
+
+function ChartBtn({ active, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "px-2.5 py-1 rounded-md text-[9px] font-semibold uppercase tracking-wide transition-colors duration-150",
+        active
+          ? "bg-foreground text-background"
+          : "bg-transparent text-muted-foreground border border-border hover:text-foreground"
+      )}
+    >
+      {children}
+    </button>
+  );
 }
 
 export default function InteractiveChart({
@@ -64,7 +117,6 @@ export default function InteractiveChart({
   const maxYear = Math.floor(maxMonth / 12);
   const effectiveYearTo = yearTo ?? maxYear;
 
-  // Filter + aggregate data based on granularity and year range
   const processed = useMemo(() => {
     const fromM = yearFrom * 12;
     const toM = effectiveYearTo * 12;
@@ -77,17 +129,19 @@ export default function InteractiveChart({
 
   if (!processed || processed.length < 2) return null;
 
-  const chartLabels = processed.map((d) =>
-    granularity === "yearly" ? monthToDate(d.month) : monthToDate(d.month)
-  );
+  const cc = getChartColors();
+
+  const chartLabels = processed.map((d) => monthToDate(d.month));
+
+  const resolvedColors = colors.map(resolveColor);
 
   const datasets = keys.map((key, i) => ({
     label: labels?.[i] || key,
     data: processed.map((d) => Math.round(d[key])),
-    borderColor: inflationAdjusted ? colors[i] + "bb" : colors[i],
+    borderColor: inflationAdjusted ? withAlpha(resolvedColors[i], 0.73) : resolvedColors[i],
     backgroundColor: i === 0
-      ? (chartType === "bar" ? colors[i] + "40" : colors[i] + "10")
-      : (chartType === "bar" ? colors[i] + "40" : "transparent"),
+      ? (chartType === "bar" ? withAlpha(resolvedColors[i], 0.25) : withAlpha(resolvedColors[i], 0.06))
+      : (chartType === "bar" ? withAlpha(resolvedColors[i], 0.25) : "transparent"),
     fill: chartType === "line" && i === 0,
     tension: 0.3,
     pointRadius: processed.length > 100 ? 0 : 2,
@@ -107,15 +161,15 @@ export default function InteractiveChart({
       legend: {
         position: "top",
         labels: {
-          font: { family: fonts.sans, size: 11, weight: "600" },
-          color: C.textMid,
+          font: { family: "Instrument Sans", size: 11, weight: "600" },
+          color: cc.muted,
           boxWidth: 14, boxHeight: 2, padding: 16,
         },
       },
       tooltip: {
-        backgroundColor: C.text,
-        titleFont: { family: fonts.sans, size: 11 },
-        bodyFont: { family: fonts.serif, size: 13 },
+        backgroundColor: cc.fg,
+        titleFont: { family: "Instrument Sans", size: 11 },
+        bodyFont: { family: "Instrument Serif", size: 13 },
         padding: 12,
         cornerRadius: 8,
         callbacks: {
@@ -129,10 +183,7 @@ export default function InteractiveChart({
       },
       zoom: {
         pan: { enabled: true, mode: "x" },
-        zoom: {
-          wheel: { enabled: true }, pinch: { enabled: true },
-          mode: "x",
-        },
+        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: "x" },
       },
       breakEvenLine: {
         month: breakEvenMonth != null ? processed.findIndex((d) => d.month >= breakEvenMonth) : -1,
@@ -141,70 +192,68 @@ export default function InteractiveChart({
     },
     scales: {
       x: {
-        grid: { color: C.borderLight },
-        ticks: {
-          font: { family: fonts.sans, size: 10 }, color: C.textFaint,
-          maxTicksLimit: mobile ? 6 : 12,
-        },
+        grid: { color: cc.border + "55" },
+        ticks: { font: { family: "Instrument Sans", size: 10 }, color: cc.faint, maxTicksLimit: mobile ? 6 : 12 },
       },
       y: {
-        grid: { color: C.borderLight },
-        ticks: {
-          font: { family: fonts.sans, size: 10 }, color: C.textFaint,
-          callback: (v) => formatY(v),
-        },
+        grid: { color: cc.border + "55" },
+        ticks: { font: { family: "Instrument Sans", size: 10 }, color: cc.faint, callback: (v) => formatY(v) },
         title: inflationAdjusted ? {
-          display: true,
-          text: "Value (in today's £)",
-          font: { family: fonts.sans, size: 9 },
-          color: C.textFaint,
+          display: true, text: "Value (in today's £)",
+          font: { family: "Instrument Sans", size: 9 }, color: cc.faint,
         } : { display: false },
       },
     },
   };
 
   const resetZoom = () => chartRef.current?.resetZoom();
-
   const ChartComp = chartType === "bar" ? Bar : Line;
 
-  const btnStyle = (active) => ({
-    padding: "4px 10px", border: `1px solid ${active ? C.text : C.border}`,
-    borderRadius: 0, background: active ? C.text : "transparent",
-    color: active ? C.bg : C.textMid, fontSize: 9, fontWeight: 600,
-    cursor: "pointer", fontFamily: fonts.sans, textTransform: "uppercase",
-    letterSpacing: "0.06em",
-  });
-
   return (
-    <div style={{ marginTop: 20, marginBottom: 12 }}>
+    <div className="mt-5 mb-3">
       {title && (
-        <div style={{ fontSize: 10, fontWeight: 600, color: C.textLight, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.12em", fontFamily: fonts.sans, display: "flex", alignItems: "center", gap: 8 }}>
-          {title}
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            {title}
+          </span>
           {inflationAdjusted && (
-            <span style={{ fontSize: 9, fontWeight: 600, color: C.accent, background: C.accentLight, padding: "2px 6px", borderRadius: 2, textTransform: "uppercase", letterSpacing: "0.04em", border: `1px solid ${C.accent}33` }}>
+            <span className="text-[9px] font-semibold uppercase tracking-wide text-brand bg-brand/10 border border-brand/20 px-1.5 py-0.5 rounded-md">
               Real terms
             </span>
           )}
         </div>
       )}
 
-      {/* Controls row */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12, alignItems: "center" }}>
-        <button onClick={() => setChartType("line")} style={btnStyle(chartType === "line")}>Line</button>
-        <button onClick={() => setChartType("bar")} style={btnStyle(chartType === "bar")}>Bar</button>
-        <span style={{ width: 1, height: 18, background: C.border, margin: "0 4px" }} />
-        <button onClick={() => setGranularity("monthly")} style={btnStyle(granularity === "monthly")}>Monthly</button>
-        <button onClick={() => setGranularity("yearly")} style={btnStyle(granularity === "yearly")}>Yearly</button>
-        <span style={{ width: 1, height: 18, background: C.border, margin: "0 4px" }} />
-        <button onClick={resetZoom} style={btnStyle(false)}>Reset Zoom</button>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
-          <label style={{ fontSize: 9, fontFamily: fonts.sans, color: C.textLight, fontWeight: 600, textTransform: "uppercase" }}>From Yr</label>
-          <select value={yearFrom} onChange={(e) => setYearFrom(Number(e.target.value))} style={{ border: `1px solid ${C.border}`, background: C.card, padding: "3px 6px", fontSize: 11, fontFamily: fonts.sans, color: C.text }}>
-            {Array.from({ length: maxYear + 1 }, (_, i) => <option key={i} value={i}>{i}</option>)}
+      {/* Controls */}
+      <div className="flex flex-wrap gap-1.5 mb-3 items-center">
+        <ChartBtn active={chartType === "line"} onClick={() => setChartType("line")}>Line</ChartBtn>
+        <ChartBtn active={chartType === "bar"} onClick={() => setChartType("bar")}>Bar</ChartBtn>
+        <div className="w-px h-4 bg-border mx-1" />
+        <ChartBtn active={granularity === "monthly"} onClick={() => setGranularity("monthly")}>Monthly</ChartBtn>
+        <ChartBtn active={granularity === "yearly"} onClick={() => setGranularity("yearly")}>Yearly</ChartBtn>
+        <div className="w-px h-4 bg-border mx-1" />
+        <ChartBtn active={false} onClick={resetZoom}>Reset Zoom</ChartBtn>
+
+        <div className="ml-auto flex items-center gap-2">
+          <label className="text-[9px] font-semibold uppercase text-muted-foreground">From Yr</label>
+          <select
+            value={yearFrom}
+            onChange={(e) => setYearFrom(Number(e.target.value))}
+            className="border border-border bg-card rounded px-2 py-1 text-xs text-foreground"
+          >
+            {Array.from({ length: maxYear + 1 }, (_, i) => (
+              <option key={i} value={i}>{i}</option>
+            ))}
           </select>
-          <label style={{ fontSize: 9, fontFamily: fonts.sans, color: C.textLight, fontWeight: 600, textTransform: "uppercase" }}>To Yr</label>
-          <select value={effectiveYearTo} onChange={(e) => setYearTo(Number(e.target.value))} style={{ border: `1px solid ${C.border}`, background: C.card, padding: "3px 6px", fontSize: 11, fontFamily: fonts.sans, color: C.text }}>
-            {Array.from({ length: maxYear + 1 }, (_, i) => <option key={i} value={i}>{i}</option>)}
+          <label className="text-[9px] font-semibold uppercase text-muted-foreground">To Yr</label>
+          <select
+            value={effectiveYearTo}
+            onChange={(e) => setYearTo(Number(e.target.value))}
+            className="border border-border bg-card rounded px-2 py-1 text-xs text-foreground"
+          >
+            {Array.from({ length: maxYear + 1 }, (_, i) => (
+              <option key={i} value={i}>{i}</option>
+            ))}
           </select>
         </div>
       </div>

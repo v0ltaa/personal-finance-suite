@@ -1,11 +1,7 @@
-import { C, fonts } from "../lib/tokens";
-
 export default function SummaryBar({ children }) {
   return (
-    <div style={{
-      marginTop: 16, padding: "10px 16px", background: C.borderLight,
-      borderLeft: `3px solid ${C.accent}`,
-      fontFamily: fonts.serif, fontSize: 14, color: C.textMid, fontStyle: "italic",
-    }}>{children}</div>
+    <div className="mt-4 px-4 py-3 bg-brand/5 border-l-[3px] border-brand rounded-r-lg font-serif text-sm text-foreground/80 italic">
+      {children}
+    </div>
   );
 }
