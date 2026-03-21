@@ -999,7 +999,7 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
 
             {/* Sold status indicator */}
             {p.custom_values?.__sold_at && (
-              <div style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)", padding: "12px 16px", marginBottom: 4 }}>
+              <div style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)", padding: "12px 16px" }}>
                 <div style={{ fontSize: 10, fontFamily: fonts.sans, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>✓ Sold</div>
                 <div style={{ fontSize: 13, fontFamily: fonts.sans, color: "rgba(255,255,255,0.8)" }}>
                   {new Date(p.custom_values.__sold_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
@@ -1009,34 +1009,34 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
                 </div>
               </div>
             )}
-
-            {/* Buttons */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: "auto" }}>
-              <button onClick={() => { onClose(); onEdit(p); }}
-                style={{ padding: "12px", borderRadius: 24, border: "none", background: "#fff", color: "#1a1a1a", fontFamily: fonts.sans, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                Edit Property
-              </button>
-              {p.website_link && (
-                <a href={p.website_link} target="_blank" rel="noreferrer"
-                  style={{ display: "block", padding: "12px", borderRadius: 24, border: "1.5px solid rgba(255,255,255,0.35)", background: "transparent", color: "#fff", fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, textDecoration: "none", textAlign: "center" }}>
-                  View Listing ↗
-                </a>
-              )}
-              {onMarkSold && (
-                p.custom_values?.__sold_at ? (
-                  <button onClick={() => onMarkSold(p, null)}
-                    style={{ padding: "12px", borderRadius: 24, border: "1.5px solid rgba(255,255,255,0.2)", background: "transparent", color: "rgba(255,255,255,0.45)", fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                    Unmark as Sold
-                  </button>
-                ) : (
-                  <button onClick={() => onMarkSold(p, new Date().toISOString())}
-                    style={{ padding: "12px", borderRadius: 24, border: "1.5px solid rgba(90,171,204,0.6)", background: "transparent", color: C.green, fontFamily: fonts.sans, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                    Mark as Sold
-                  </button>
-                )
-              )}
-            </div>
           </div>
+        </div>
+
+        {/* Action buttons row */}
+        <div style={{ display: "flex", gap: 10, padding: mobile ? "12px 16px" : "12px 28px", borderBottom: `1px solid ${C.borderLight}`, flexWrap: "wrap", justifyContent: "center" }}>
+          <button onClick={() => { onClose(); onEdit(p); }}
+            style={{ padding: "8px 22px", borderRadius: 24, border: `1.5px solid ${C.border}`, background: C.card, color: C.text, fontFamily: fonts.sans, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            Edit Property
+          </button>
+          {p.website_link && (
+            <a href={p.website_link} target="_blank" rel="noreferrer"
+              style={{ padding: "8px 22px", borderRadius: 24, border: `1.5px solid ${C.border}`, background: C.card, color: C.accent, fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, textDecoration: "none", textAlign: "center" }}>
+              View Listing ↗
+            </a>
+          )}
+          {onMarkSold && (
+            p.custom_values?.__sold_at ? (
+              <button onClick={() => onMarkSold(p, null)}
+                style={{ padding: "8px 22px", borderRadius: 24, border: `1.5px solid ${C.borderLight}`, background: C.card, color: C.textLight, fontFamily: fonts.sans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                Unmark as Sold
+              </button>
+            ) : (
+              <button onClick={() => onMarkSold(p, new Date().toISOString())}
+                style={{ padding: "8px 22px", borderRadius: 24, border: `1.5px solid ${C.green}55`, background: C.card, color: C.green, fontFamily: fonts.sans, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                Mark as Sold
+              </button>
+            )
+          )}
         </div>
 
         {/* Bottom section: map + details */}
