@@ -15,12 +15,12 @@ import {
 } from "lucide-react";
 
 const modules = [
-  { key: "gaffTracker",    label: "Properties",             path: "/gaff",    icon: Home },
-  { key: "comparison",     label: "Comparison",             path: "/compare", icon: Layers },
-  { key: "buyVsRent",      label: "Buy Scenario",           path: "/",        icon: Calculator },
-  { key: "sandbox",        label: "Rent vs Buy",            path: "/sandbox", icon: BarChart2 },
-  { key: "financeTracker", label: "Budget Tracker",         path: "/finance", icon: Wallet },
-  { key: "mapView",        label: "Map",                    path: "/map",     icon: Map },
+  { key: "gaffTracker",    label: "Properties",    path: "/gaff",    icon: Home },
+  { key: "comparison",     label: "Comparison",    path: "/compare", icon: Layers },
+  { key: "mapView",        label: "Map",           path: "/map",     icon: Map },
+  { key: "buyVsRent",      label: "Buy Scenario",  path: "/",        icon: Calculator,  wip: true },
+  { key: "sandbox",        label: "Rent vs Buy",   path: "/sandbox", icon: BarChart2,   wip: true },
+  { key: "financeTracker", label: "Budget Tracker",path: "/finance", icon: Wallet,      wip: true },
 ];
 
 export default function App() {
@@ -152,6 +152,11 @@ export default function App() {
               >
                 <Icon size={14} />
                 {m.label}
+                {m.wip && (
+                  <span className="text-[9px] font-semibold tracking-wide uppercase text-muted-foreground/60 leading-none">
+                    WIP
+                  </span>
+                )}
               </button>
             );
           })}

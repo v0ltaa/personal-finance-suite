@@ -208,6 +208,15 @@ export function getWorkplaceAddress(user) {
   return user?.user_metadata?.workplace_address || "";
 }
 
+export async function saveCostPerMile(value) {
+  if (!supabase) return { error: "Not configured" };
+  return supabase.auth.updateUser({ data: { cost_per_mile: value } });
+}
+
+export function getCostPerMile(user) {
+  return user?.user_metadata?.cost_per_mile ?? "";
+}
+
 // ── Gaff Tracker: Custom landmarks (stored in user metadata) ──
 
 export async function saveLandmarks(landmarks) {
@@ -218,3 +227,20 @@ export async function saveLandmarks(landmarks) {
 export function getLandmarks(user) {
   return user?.user_metadata?.landmarks || [];
 }
+
+// ── Gaff Tracker: Landmark categories (stored in user metadata) ──
+
+const DEFAULT_LANDMARK_CATEGORIES = ["Train Station", "Gym", "Friends"];
+
+export async function saveLandmarkCategories(categories) {
+  if (!supabase) return { error: "Not configured" };
+  return supabase.auth.updateUser({ data: { landmark_categories: categories } });
+}
+
+export function getLandmarkCategories(user) {
+  const custom = user?.user_metadata?.landmark_categories;
+  if (custom && custom.length > 0) return custom;
+  return [...DEFAULT_LANDMARK_CATEGORIES];
+}
+
+export { DEFAULT_LANDMARK_CATEGORIES };

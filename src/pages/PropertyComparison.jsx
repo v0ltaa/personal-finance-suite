@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { fmt } from "../lib/tokens";
 import { useIsMobile, useAuth } from "../lib/hooks";
-import { loadProperties, loadCustomFields } from "../lib/supabase";
+import { loadProperties, loadCustomFields, getLandmarks, getWorkplaceAddress } from "../lib/supabase";
+import { DistanceMatrixModal } from "./MapView";
 import { cn } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogHeader, DialogTitle, DialogBody, DialogFooter } from "../components/ui/dialog";
@@ -328,8 +329,9 @@ function CfCell({ field, property }) {
   }
   if (field.field_type === "maybe") {
     const colorMap = { yes: "text-green-600", maybe: "text-amber-500", no: "text-red-500" };
-    return val
-      ? <span className={cn("text-xs font-bold uppercase tracking-[0.04em]", colorMap[val] || "text-muted-foreground")}>{val}</span>
+    const strVal = typeof val === "string" ? val : null;
+    return strVal
+      ? <span className={cn("text-xs font-bold uppercase tracking-[0.04em]", colorMap[strVal] || "text-muted-foreground")}>{strVal}</span>
       : <span className="text-muted-foreground">—</span>;
   }
   if (field.field_type === "distance") {
@@ -347,10 +349,30 @@ function CfCell({ field, property }) {
       </span>
     );
   }
-  // text
+  if (field.field_type === "location") {
+    // location fields are address strings used by the commute section; show as plain text
+    const locName = val && typeof val === "object" ? val.name : (typeof val === "string" ? val : null);
+    return (
+      <span className="text-xs text-muted-foreground max-w-[140px] block overflow-hidden text-ellipsis whitespace-nowrap">
+        {locName || "—"}
+      </span>
+    );
+  }
+  if (field.field_type?.startsWith("nearest")) {
+    // nearest landmark — show name + shortest travel time
+    if (!val || typeof val !== "object" || !val.name) return <span className="text-muted-foreground">—</span>;
+    const times = [val.walk, val.drive, val.cycle, val.transit].filter(Boolean);
+    return (
+      <span className="text-xs text-muted-foreground max-w-[160px] block overflow-hidden text-ellipsis whitespace-nowrap" title={times.length ? times.join(" · ") : ""}>
+        {val.name}{times.length > 0 && <span className="text-[10px] ml-1 text-foreground/60">({times[0]})</span>}
+      </span>
+    );
+  }
+  // text (default) — guard against objects being stored in unexpected field types
+  const displayVal = val !== null && typeof val === "object" ? null : val;
   return (
     <span className="text-xs text-muted-foreground max-w-[140px] block overflow-hidden text-ellipsis whitespace-nowrap">
-      {val || "—"}
+      {displayVal || "—"}
     </span>
   );
 }
@@ -413,6 +435,9 @@ export default function PropertyComparison() {
   const [filters,      setFilters]      = useState({});
   const [showDialog,   setShowDialog]   = useState(false);
   const [hiddenProps,  setHiddenProps]  = useState(new Set());
+  const [showDistMatrix, setShowDistMatrix] = useState(false);
+  const landmarks = useMemo(() => getLandmarks(user), [user]);
+  const workplaceAddress = getWorkplaceAddress(user);
 
   // Persist column visibility in localStorage
   const [hiddenCols, setHiddenColsRaw] = useState(() => {
@@ -525,23 +550,36 @@ export default function PropertyComparison() {
             Side-by-side matrix of all your tracked properties.
           </p>
         </div>
-        <Button
-          variant="default"
-          size="md"
-          onClick={() => setShowDialog(true)}
-          className="rounded-full uppercase tracking-[0.06em] whitespace-nowrap gap-2"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-            <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
-          </svg>
-          Customise
-          {(hiddenColCount > 0 || hiddenPropCount > 0) && (
-            <span className="bg-background text-foreground text-[9px] font-bold px-1.5 py-px rounded-full">
-              {hiddenColCount + hiddenPropCount}
-            </span>
-          )}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="md"
+            onClick={() => setShowDistMatrix(true)}
+            className="rounded-full uppercase tracking-[0.06em] whitespace-nowrap gap-2"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+            </svg>
+            Distances
+          </Button>
+          <Button
+            variant="default"
+            size="md"
+            onClick={() => setShowDialog(true)}
+            className="rounded-full uppercase tracking-[0.06em] whitespace-nowrap gap-2"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+              <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+            </svg>
+            Customise
+            {(hiddenColCount > 0 || hiddenPropCount > 0) && (
+              <span className="bg-background text-foreground text-[9px] font-bold px-1.5 py-px rounded-full">
+                {hiddenColCount + hiddenPropCount}
+              </span>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Tabs + count */}
@@ -716,6 +754,15 @@ export default function PropertyComparison() {
           hiddenProps={hiddenProps}
           onHiddenPropsChange={setHiddenProps}
           onClose={() => setShowDialog(false)}
+        />
+      )}
+      {showDistMatrix && (
+        <DistanceMatrixModal
+          properties={properties}
+          initialProperty={null}
+          landmarks={landmarks}
+          workplaceAddress={workplaceAddress}
+          onClose={() => setShowDistMatrix(false)}
         />
       )}
     </div>
