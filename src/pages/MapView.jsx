@@ -31,6 +31,7 @@ function applyFilters(list, filters, customFields, activeTab) {
 }
 
 function applySort(list, sortBy) {
+  if (sortBy === "none") return list;
   return [...list].sort((a, b) => {
     if (sortBy === "date_asc") return new Date(a.created_at) - new Date(b.created_at);
     if (sortBy === "date_desc") return new Date(b.created_at) - new Date(a.created_at);
@@ -53,6 +54,16 @@ function rankColor(ratio) {
 }
 function rankSize(ratio) {
   return Math.round(46 - ratio * 16);
+}
+
+// ─── Property type label for default (no-sort) pins ──────────────────────────
+function propertyTypeLabel(type) {
+  if (!type) return "·";
+  const t = type.toLowerCase();
+  if (t.includes("studio")) return "S";
+  if (t.includes("flat") || t.includes("apartment")) return "F";
+  if (t.includes("house") || t.includes("detach") || t.includes("semi") || t.includes("terrace") || t.includes("bungalow") || t.includes("cottage")) return "H";
+  return "·";
 }
 
 // ─── SVG marker factories ─────────────────────────────────────────────────────
@@ -272,10 +283,10 @@ function LandmarkRow({ l, editId, editName, editAddress, editIcon, editCategory,
 
 // ─── Map Controls Overlay ─────────────────────────────────────────────────────
 function MapControls({ customFields, sortBy, onSort, filters, onFilter, activeTab, onActiveTab, total, geocoding, categories, visibleCategories, onToggleCategory, onManageLandmarks }) {
-  const [open, setOpen] = useState(false);
   const rankingFields = customFields.filter(f => f.field_type === "ranking");
   const numberFields = customFields.filter(f => f.field_type === "number" || f.field_type === "cost");
   const sortOptions = [
+    { value: "none", label: "None" },
     { value: "date_desc", label: "Newest first" },
     { value: "date_asc", label: "Oldest first" },
     { value: "price_asc", label: "Price ↑" },
@@ -290,105 +301,86 @@ function MapControls({ customFields, sortBy, onSort, filters, onFilter, activeTa
   return (
     <div className="absolute top-3 left-3 z-[1000] w-60">
       <div className="bg-card/95 backdrop-blur border border-border rounded-xl shadow-xl overflow-hidden">
-        <div className={cn("flex items-center px-2.5 py-2 gap-1.5", open ? "border-b border-border/50" : "")}>
+
+        {/* ── Rent / Buy underline tabs ── */}
+        <div className="flex border-b border-border/60 px-1">
           {[{ key: "rent", label: "Rent" }, { key: "buy", label: "Buy" }].map(t => (
             <button
               key={t.key}
               onClick={() => onActiveTab(t.key)}
               className={cn(
-                "px-3.5 py-1 text-[11px] font-semibold border-[1.5px] cursor-pointer transition-colors rounded",
+                "px-4 py-2.5 text-[11px] font-semibold cursor-pointer bg-transparent border-none transition-all duration-150 border-b-2 -mb-px",
                 activeTab === t.key
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-border bg-transparent text-muted-foreground hover:bg-muted"
+                  ? "border-brand text-brand"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               )}
             >
               {t.label}
             </button>
           ))}
-          <span className="text-[10px] text-muted-foreground/60 ml-auto">
-            {geocoding ? "…" : `${total} shown`}
+          <span className="text-[10px] text-muted-foreground/50 ml-auto self-center pr-3">
+            {geocoding ? "…" : total}
           </span>
-          <button
-            onClick={() => setOpen(!open)}
-            className="px-2 py-[3px] text-[10px] bg-transparent border border-border cursor-pointer text-muted-foreground ml-1 rounded hover:bg-muted transition-colors"
-          >
-            {hasFilters ? "● " : ""}{open ? "▴" : "▾"}
-          </button>
         </div>
-        {open && (
-          <div className="p-3.5 max-h-[calc(100vh-200px)] overflow-y-auto">
-            <div className="mb-3.5">
-              <div className="text-[8px] tracking-[0.18em] uppercase font-bold text-brand mb-1.5">
-                Sort — affects pin size &amp; colour
-              </div>
-              <Select value={sortBy} onChange={e => onSort(e.target.value)} className="w-full text-[11px] h-8">
-                {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </Select>
+
+        {/* ── Filters — always visible ── */}
+        <div className="p-3.5 max-h-[calc(100vh-220px)] overflow-y-auto">
+          <div className="mb-3.5">
+            <div className="text-[8px] tracking-[0.18em] uppercase font-bold text-brand mb-1.5">
+              Sort — affects pin size &amp; colour
             </div>
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-[8px] tracking-[0.18em] uppercase font-bold text-brand">Filters</span>
-                {hasFilters && (
-                  <button onClick={() => onFilter({})} className="text-[9px] bg-none border-none text-brand cursor-pointer font-semibold">
-                    Clear all
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-x-2.5 gap-y-2">
-                {[["Min beds", "minBeds"], ["Max beds", "maxBeds"], ["Max £", "maxPrice"]].map(([label, key]) => (
-                  <div key={key}>
-                    <div className="text-[8px] text-muted-foreground mb-[3px] uppercase tracking-[0.08em]">{label}</div>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={filters[key] || ""}
-                      onChange={e => onFilter({ ...filters, [key]: e.target.value })}
-                      className="w-16 h-7 text-[11px]"
-                    />
-                  </div>
-                ))}
-                {rankingFields.map(f => (
-                  <div key={f.id}>
-                    <div className="text-[8px] text-muted-foreground mb-[3px] uppercase tracking-[0.08em]">Min {f.name}</div>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={10}
-                      value={filters[`rank_${f.id}`] || ""}
-                      onChange={e => onFilter({ ...filters, [`rank_${f.id}`]: e.target.value })}
-                      className="w-16 h-7 text-[11px]"
-                    />
-                  </div>
-                ))}
-                {numberFields.map(f => (
-                  <div key={f.id}>
-                    <div className="text-[8px] text-muted-foreground mb-[3px] uppercase tracking-[0.08em]">Min {f.name}</div>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={filters[`num_${f.id}`] || ""}
-                      onChange={e => onFilter({ ...filters, [`num_${f.id}`]: e.target.value })}
-                      className="w-16 h-7 text-[11px]"
-                    />
-                  </div>
-                ))}
-              </div>
+            <Select value={sortBy} onChange={e => onSort(e.target.value)} className="w-full text-[11px] h-8">
+              {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+          </div>
+
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-[8px] tracking-[0.18em] uppercase font-bold text-brand">Filters</span>
+              {hasFilters && (
+                <button onClick={() => onFilter({})} className="text-[9px] bg-none border-none text-brand cursor-pointer font-semibold">
+                  Clear all
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-x-2.5 gap-y-2">
+              {[["Min beds", "minBeds"], ["Max beds", "maxBeds"], ["Max £", "maxPrice"]].map(([label, key]) => (
+                <div key={key}>
+                  <div className="text-[8px] text-muted-foreground mb-[3px] uppercase tracking-[0.08em]">{label}</div>
+                  <Input type="number" min={0} value={filters[key] || ""} onChange={e => onFilter({ ...filters, [key]: e.target.value })} className="w-16 h-7 text-[11px]" />
+                </div>
+              ))}
+              {rankingFields.map(f => (
+                <div key={f.id}>
+                  <div className="text-[8px] text-muted-foreground mb-[3px] uppercase tracking-[0.08em]">Min {f.name}</div>
+                  <Input type="number" min={1} max={10} value={filters[`rank_${f.id}`] || ""} onChange={e => onFilter({ ...filters, [`rank_${f.id}`]: e.target.value })} className="w-16 h-7 text-[11px]" />
+                </div>
+              ))}
+              {numberFields.map(f => (
+                <div key={f.id}>
+                  <div className="text-[8px] text-muted-foreground mb-[3px] uppercase tracking-[0.08em]">Min {f.name}</div>
+                  <Input type="number" min={0} value={filters[`num_${f.id}`] || ""} onChange={e => onFilter({ ...filters, [`num_${f.id}`]: e.target.value })} className="w-16 h-7 text-[11px]" />
+                </div>
+              ))}
             </div>
           </div>
-        )}
+        </div>
       </div>
 
-      <div className="mt-2 bg-card/95 backdrop-blur border border-border rounded-xl px-2.5 py-1.5 flex items-center gap-2 shadow-md">
-        <div className="flex items-center gap-1">
-          <div className="w-4 h-4 rounded-full bg-[hsl(120,78%,40%)] border-2 border-white shadow-sm" />
-          <span className="text-[9px] text-muted-foreground">Best</span>
+      {/* Colour legend — only when a sort is active */}
+      {sortBy !== "none" && (
+        <div className="mt-2 bg-card/95 backdrop-blur border border-border rounded-xl px-2.5 py-1.5 flex items-center gap-2 shadow-md">
+          <div className="flex items-center gap-1">
+            <div className="w-4 h-4 rounded-full bg-[hsl(120,78%,40%)] border-2 border-white shadow-sm" />
+            <span className="text-[9px] text-muted-foreground">Best</span>
+          </div>
+          <div className="flex-1 h-[5px] rounded-full" style={{ background: "linear-gradient(to right, hsl(120,78%,40%), hsl(60,78%,42%), hsl(0,78%,40%))" }} />
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded-full bg-[hsl(0,78%,40%)] border-2 border-white shadow-sm" />
+            <span className="text-[9px] text-muted-foreground">Worst</span>
+          </div>
         </div>
-        <div className="flex-1 h-[5px] rounded-full" style={{ background: "linear-gradient(to right, hsl(120,78%,40%), hsl(60,78%,42%), hsl(0,78%,40%))" }} />
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded-full bg-[hsl(0,78%,40%)] border-2 border-white shadow-sm" />
-          <span className="text-[9px] text-muted-foreground">Worst</span>
-        </div>
-      </div>
+      )}
 
       <div className="mt-1.5 bg-card/95 backdrop-blur border border-border rounded-xl px-2.5 py-1.5 shadow-md">
         <div className="flex gap-3 flex-wrap items-center">
@@ -400,12 +392,7 @@ function MapControls({ customFields, sortBy, onSort, filters, onFilter, activeTa
             <span className="text-[8px] tracking-[0.12em] uppercase font-bold text-muted-foreground/60 mr-0.5">Show:</span>
             {categories.map(cat => (
               <label key={cat} className="flex items-center gap-1 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={visibleCategories[cat] !== false}
-                  onChange={() => onToggleCategory(cat)}
-                  className="w-3 h-3 accent-brand rounded cursor-pointer"
-                />
+                <input type="checkbox" checked={visibleCategories[cat] !== false} onChange={() => onToggleCategory(cat)} className="w-3 h-3 accent-brand rounded cursor-pointer" />
                 <span className="text-[9px] text-muted-foreground">{cat}</span>
               </label>
             ))}
@@ -584,6 +571,97 @@ export function DistanceMatrixModal({ properties, initialProperty, landmarks, wo
   );
 }
 
+// ─── Property Hover Card ──────────────────────────────────────────────────────
+function PropertyHoverCard({ prop, x, y }) {
+  const hasPhoto = !!prop.photo_url;
+  const price = prop.price ? `£${Number(prop.price).toLocaleString()}` : null;
+  const priceSuffix = prop.listing_type === "rent" ? " pcm" : null;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: x,
+        top: y,
+        transform: "translate(-50%, -100%)",
+        zIndex: 1050,
+        width: 264,
+        pointerEvents: "none",
+      }}
+    >
+      <div className="bg-card border border-border rounded-xl shadow-2xl overflow-hidden animate-fade-in">
+      {hasPhoto && (
+        <div className="h-36 overflow-hidden bg-muted">
+          <img src={prop.photo_url} alt={prop.name} className="w-full h-full object-cover" />
+        </div>
+      )}
+      <div className={cn("px-3.5", hasPhoto ? "py-3" : "py-3.5")}>
+        {price && (
+          <div className="font-serif text-xl font-bold text-foreground leading-none">
+            {price}
+            {priceSuffix && (
+              <span className="text-xs font-sans font-normal text-muted-foreground ml-1">{priceSuffix}</span>
+            )}
+          </div>
+        )}
+        <div className={cn("text-sm font-medium text-foreground truncate leading-snug", price ? "mt-2" : "")}>
+          {prop.name}
+        </div>
+        <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground">
+          {prop.property_type && (
+            <span className="capitalize">{prop.property_type}</span>
+          )}
+          {prop.bedrooms != null && prop.bedrooms !== "" && (
+            <span className="flex items-center gap-1">🛏 {prop.bedrooms}</span>
+          )}
+          {prop.bathrooms != null && prop.bathrooms !== "" && (
+            <span className="flex items-center gap-1">🚿 {prop.bathrooms}</span>
+          )}
+        </div>
+        {prop.location && (
+          <div className="text-[10px] text-muted-foreground/60 mt-1.5 truncate">{prop.location}</div>
+        )}
+        <div className="mt-2 pt-2 border-t border-border/50 text-[9px] tracking-[0.1em] uppercase text-muted-foreground/40 font-medium">
+          Click pin to view details
+        </div>
+      </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Landmark Hover Card ──────────────────────────────────────────────────────
+function LandmarkHoverCard({ landmark, x, y }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: x,
+        top: y,
+        transform: "translate(-50%, -100%)",
+        zIndex: 1050,
+        width: 200,
+        pointerEvents: "none",
+      }}
+    >
+      <div className="bg-card border border-border rounded-xl shadow-2xl overflow-hidden animate-fade-in">
+        <div className="px-3.5 py-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl leading-none">{landmark.icon}</span>
+            <span className="text-sm font-semibold text-foreground leading-snug">{landmark.name}</span>
+          </div>
+          {landmark.category && (
+            <div className="text-[10px] text-brand font-semibold uppercase tracking-[0.1em] mt-1.5">{landmark.category}</div>
+          )}
+          {landmark.address && (
+            <div className="text-[10px] text-muted-foreground/70 mt-1 truncate">{landmark.address}</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main MapView ─────────────────────────────────────────────────────────────
 export default function MapView() {
   const { user } = useAuth();
@@ -601,9 +679,10 @@ export default function MapView() {
   const [landmarkCoords, setLandmarkCoords] = useState({});
 
   const [activeTab, setActiveTab] = useState("rent");
-  const [sortBy, setSortBy] = useState("date_desc");
+  const [sortBy, setSortBy] = useState("none");
   const [filters, setFilters] = useState({});
   const [selectedProperty, setSelectedProperty] = useState(null);
+  const [hoverCard, setHoverCard] = useState(null);
   const [visibleCategories, setVisibleCategories] = useState({});
   const [showLandmarksModal, setShowLandmarksModal] = useState(false);
 
@@ -716,30 +795,77 @@ export default function MapView() {
     // Clear old markers
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
+    setHoverCard(null);
 
     const total = displayed.length;
     const coordsToFit = [];
 
     // Property markers
+    const ranked = sortBy !== "none";
     displayed.forEach((prop, idx) => {
       const coord = propCoords[prop.id];
       if (!coord) return;
-      const ratio = total > 1 ? idx / (total - 1) : 0;
-      const rank = idx + 1;
+      const ratio = ranked && total > 1 ? idx / (total - 1) : 0.5;
+      const color = ranked ? rankColor(ratio) : "hsl(18,60%,38%)";
+      const size = ranked ? rankSize(ratio) : 36;
+      const label = ranked ? String(idx + 1) : propertyTypeLabel(prop.property_type);
+      const r = size / 2;
+      const h = size + 12;
       const marker = L.marker([coord.lat, coord.lng], {
-        icon: propertyMarkerIcon(rankColor(ratio), rankSize(ratio), String(rank)),
-        zIndexOffset: total - idx + 10,
-      }).on("click", () => setSelectedProperty(prop)).addTo(map);
+        icon: propertyMarkerIcon(color, size, label),
+        zIndexOffset: ranked ? (total - idx + 10) : 10,
+      })
+        .on("mouseover", () => {
+          const svg = marker._icon?.querySelector("svg");
+          if (svg) {
+            svg.style.transition = "transform 0.18s ease, filter 0.18s ease";
+            svg.style.transformOrigin = `${r + 2}px ${h + 2}px`;
+            svg.style.transform = "scale(1.25)";
+            svg.style.filter = "brightness(1.25) saturate(1.3) drop-shadow(0 4px 10px rgba(0,0,0,0.45))";
+          }
+          const point = map.latLngToContainerPoint([coord.lat, coord.lng]);
+          const scaledPinTop = Math.round((h + 4) * 1.25);
+          setHoverCard({ type: "property", prop, x: point.x, y: point.y - scaledPinTop - 8 });
+        })
+        .on("mouseout", () => {
+          const svg = marker._icon?.querySelector("svg");
+          if (svg) {
+            svg.style.transform = "";
+            svg.style.filter = "";
+          }
+          setHoverCard(null);
+        })
+        .on("click", () => setSelectedProperty(prop))
+        .addTo(map);
       markersRef.current.push(marker);
       coordsToFit.push([coord.lat, coord.lng]);
     });
 
     // Workplace marker
     if (workplaceCoord) {
+      const wSize = 40, wR = 20, wH = 52;
       const marker = L.marker([workplaceCoord.lat, workplaceCoord.lng], {
-        icon: specialMarkerIcon("🏢", "#b8860b", 40),
+        icon: specialMarkerIcon("🏢", "#b8860b", wSize),
         zIndexOffset: 9999,
-      }).bindPopup(`<div style="font-family:Arial,sans-serif"><strong>🏢 Workplace</strong><br><span style="font-size:11px;color:#777">${workplaceAddress || ""}</span></div>`).addTo(map);
+      })
+        .on("mouseover", () => {
+          const svg = marker._icon?.querySelector("svg");
+          if (svg) {
+            svg.style.transition = "transform 0.18s ease, filter 0.18s ease";
+            svg.style.transformOrigin = `${wR + 2}px ${wH + 2}px`;
+            svg.style.transform = "scale(1.2)";
+            svg.style.filter = "brightness(1.3) saturate(1.2) drop-shadow(0 3px 8px rgba(0,0,0,0.4))";
+          }
+          const point = map.latLngToContainerPoint([workplaceCoord.lat, workplaceCoord.lng]);
+          const scaledPinTop = Math.round((wH + 4) * 1.2);
+          setHoverCard({ type: "landmark", landmark: { icon: "🏢", name: "Workplace", address: workplaceAddress || "", category: "" }, x: point.x, y: point.y - scaledPinTop - 8 });
+        })
+        .on("mouseout", () => {
+          const svg = marker._icon?.querySelector("svg");
+          if (svg) { svg.style.transform = ""; svg.style.filter = ""; }
+          setHoverCard(null);
+        })
+        .addTo(map);
       markersRef.current.push(marker);
       coordsToFit.push([workplaceCoord.lat, workplaceCoord.lng]);
     }
@@ -749,10 +875,32 @@ export default function MapView() {
       if (l.category && !visibleCategories[l.category]) return;
       const coord = landmarkCoords[l.id];
       if (!coord) return;
+      const lSize = 36, lR = 18, lH = 48;
       const marker = L.marker([coord.lat, coord.lng], {
-        icon: specialMarkerIcon(l.icon, "#555", 36),
+        icon: specialMarkerIcon(l.icon, "#555", lSize),
         zIndexOffset: 9998,
-      }).bindPopup(`<div style="font-family:Arial,sans-serif"><strong>${l.icon} ${l.name}</strong>${l.category ? `<br><span style="font-size:10px;color:#999">${l.category}</span>` : ""}<br><span style="font-size:11px;color:#777">${l.address}</span></div>`).addTo(map);
+      })
+        .on("mouseover", () => {
+          const svg = marker._icon?.querySelector("svg");
+          if (svg) {
+            svg.style.transition = "transform 0.18s ease, filter 0.18s ease";
+            svg.style.transformOrigin = `${lR + 2}px ${lH + 2}px`;
+            svg.style.transform = "scale(1.2)";
+            svg.style.filter = "brightness(1.3) saturate(1.2) drop-shadow(0 3px 8px rgba(0,0,0,0.4))";
+          }
+          const point = map.latLngToContainerPoint([coord.lat, coord.lng]);
+          const scaledPinTop = Math.round((lH + 4) * 1.2);
+          setHoverCard({ type: "landmark", landmark: l, x: point.x, y: point.y - scaledPinTop - 8 });
+        })
+        .on("mouseout", () => {
+          const svg = marker._icon?.querySelector("svg");
+          if (svg) {
+            svg.style.transform = "";
+            svg.style.filter = "";
+          }
+          setHoverCard(null);
+        })
+        .addTo(map);
       markersRef.current.push(marker);
       coordsToFit.push([coord.lat, coord.lng]);
     });
@@ -765,7 +913,7 @@ export default function MapView() {
         hasFitRef.current = true;
       }
     }
-  }, [displayed, propCoords, workplaceCoord, workplaceAddress, landmarks, landmarkCoords, visibleCategories]);
+  }, [displayed, propCoords, workplaceCoord, workplaceAddress, landmarks, landmarkCoords, visibleCategories, sortBy]);
 
   // ── Save landmarks ────────────────────────────────────────────────────────────
   const handleSaveLandmarks = async (updated) => {
@@ -818,6 +966,13 @@ export default function MapView() {
           onToggleCategory={(cat) => setVisibleCategories(prev => ({ ...prev, [cat]: prev[cat] === false ? true : false }))}
           onManageLandmarks={() => setShowLandmarksModal(true)}
         />
+
+        {hoverCard?.type === "property" && (
+          <PropertyHoverCard prop={hoverCard.prop} x={hoverCard.x} y={hoverCard.y} />
+        )}
+        {hoverCard?.type === "landmark" && (
+          <LandmarkHoverCard landmark={hoverCard.landmark} x={hoverCard.x} y={hoverCard.y} />
+        )}
 
         {(loading || geocoding) && (
           <div className="absolute bottom-4 right-4 bg-card border border-border rounded-lg px-3.5 py-1.5 text-[11px] text-muted-foreground shadow-md z-[1000]">
