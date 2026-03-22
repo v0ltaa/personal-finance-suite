@@ -1,55 +1,21 @@
-import { useState, useEffect, useRef, useMemo } from "react";
-import { fmt } from "../lib/tokens";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import L from "leaflet";
 import { useAuth } from "../lib/hooks";
 import {
   loadProperties, loadCustomFields,
   saveLandmarks, getLandmarks,
+  saveLandmarkCategories, getLandmarkCategories, DEFAULT_LANDMARK_CATEGORIES,
   getWorkplaceAddress,
 } from "../lib/supabase";
+import { geocodeAddress, getRouteDistance, haversineKm } from "../lib/geo";
+import { PropertyDetailModal } from "./GaffTracker";
 import { cn } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import { Select } from "../components/ui/select";
 import { Input } from "../components/ui/input";
 
-const GMAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
-
-// ─── Maps SDK loader ───────────────────────────────────────────────────────────
-async function loadMapsSDK() {
-  if (window.google?.maps?.Map) return;
-  return new Promise((resolve, reject) => {
-    if (document.querySelector("[data-gmaps]")) {
-      const t = setInterval(() => { if (window.google?.maps?.Map) { clearInterval(t); resolve(); } }, 100);
-      return;
-    }
-    const sc = document.createElement("script");
-    sc.setAttribute("data-gmaps", "1");
-    sc.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}`;
-    sc.onload = resolve;
-    sc.onerror = reject;
-    document.head.appendChild(sc);
-  });
-}
-
-// ─── Geocoding (cached) ────────────────────────────────────────────────────────
-const geocodeCache = {};
-function geocodeAddress(address) {
-  if (!address?.trim()) return Promise.resolve(null);
-  const key = address.trim().toLowerCase();
-  if (geocodeCache[key]) return Promise.resolve(geocodeCache[key]);
-  return new Promise((resolve) => {
-    new window.google.maps.Geocoder().geocode({ address }, (results, status) => {
-      if (status === "OK" && results[0]) {
-        const loc = { lat: results[0].geometry.location.lat(), lng: results[0].geometry.location.lng() };
-        geocodeCache[key] = loc;
-        resolve(loc);
-      } else {
-        resolve(null);
-      }
-    });
-  });
-}
-
-// ─── Sort / filter helpers (mirror of GaffTracker logic) ─────────────────────
+// ─── Sort / filter helpers ────────────────────────────────────────────────────
 function applyFilters(list, filters, customFields, activeTab) {
   let res = list.filter(p => p.listing_type === activeTab);
   if (filters.minBeds) res = res.filter(p => p.bedrooms >= Number(filters.minBeds));
@@ -81,49 +47,41 @@ function applySort(list, sortBy) {
   });
 }
 
-// ─── Pin colour / size by rank ─────────────────────────────────────────────────
-// ratio 0 = rank #1 = best = green/large; ratio 1 = last = red/small
+// ─── Pin colour / size by rank ────────────────────────────────────────────────
 function rankColor(ratio) {
-  return `hsl(${Math.round((1 - ratio) * 120)},78%,40%)`;
+  return `hsl(${Math.round((1 - ratio) * 120)},80%,42%)`;
 }
 function rankSize(ratio) {
-  return Math.round(40 - ratio * 16); // 40 → 24 px
+  return Math.round(46 - ratio * 16);
 }
 
-// ─── SVG marker factories ──────────────────────────────────────────────────────
+// ─── SVG marker factories ─────────────────────────────────────────────────────
 function propertyMarkerIcon(color, size, rankLabel) {
   const r = size / 2;
-  const h = size + 10;
-  const fs = Math.max(8, Math.round(size / 3));
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${h}">
-    <circle cx="${r}" cy="${r}" r="${r - 2}" fill="${color}" stroke="white" stroke-width="2.5"/>
-    <text x="${r}" y="${r + fs * 0.38}" text-anchor="middle" fill="white" font-size="${fs}px" font-weight="700" font-family="Arial,sans-serif">${rankLabel}</text>
-    <polygon points="${r - 4},${size - 1} ${r + 4},${size - 1} ${r},${h - 1}" fill="${color}"/>
+  const h = size + 12;
+  const fs = Math.max(9, Math.round(size / 2.8));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size + 4}" height="${h + 4}" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,0.35))">
+    <circle cx="${r + 2}" cy="${r + 2}" r="${r - 1}" fill="${color}" stroke="white" stroke-width="3"/>
+    <text x="${r + 2}" y="${r + 2 + fs * 0.36}" text-anchor="middle" fill="white" font-size="${fs}px" font-weight="800" font-family="Arial,sans-serif">${rankLabel}</text>
+    <polygon points="${r - 4},${size} ${r + 8},${size} ${r + 2},${h + 1}" fill="${color}"/>
   </svg>`;
-  return {
-    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
-    scaledSize: new window.google.maps.Size(size, h),
-    anchor: new window.google.maps.Point(r, h),
-  };
+  return L.divIcon({ html: svg, className: "", iconSize: [size + 4, h + 4], iconAnchor: [r + 2, h + 2], popupAnchor: [0, -(h + 2)] });
 }
 
-function specialMarkerIcon(emoji, bg, size = 34) {
+function specialMarkerIcon(emoji, bg, size = 38) {
   const r = size / 2;
-  const h = size + 10;
-  const fs = Math.round(size * 0.46);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${h}">
-    <circle cx="${r}" cy="${r}" r="${r - 2}" fill="${bg}" stroke="white" stroke-width="2.5"/>
-    <text x="${r}" y="${r + fs * 0.38}" text-anchor="middle" font-size="${fs}px">${emoji}</text>
-    <polygon points="${r - 4},${size - 1} ${r + 4},${size - 1} ${r},${h - 1}" fill="${bg}"/>
+  const h = size + 12;
+  const fs = Math.round(size * 0.44);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size + 4}" height="${h + 4}" style="filter:drop-shadow(0 2px 5px rgba(0,0,0,0.4))">
+    <circle cx="${r + 2}" cy="${r + 2}" r="${r - 1}" fill="${bg}" stroke="white" stroke-width="3"/>
+    <text x="${r + 2}" y="${r + 2 + fs * 0.36}" text-anchor="middle" font-size="${fs}px">${emoji}</text>
+    <polygon points="${r - 4},${size} ${r + 8},${size} ${r + 2},${h + 1}" fill="${bg}"/>
   </svg>`;
-  return {
-    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
-    scaledSize: new window.google.maps.Size(size, h),
-    anchor: new window.google.maps.Point(r, h),
-  };
+  return L.divIcon({ html: svg, className: "", iconSize: [size + 4, h + 4], iconAnchor: [r + 2, h + 2], popupAnchor: [0, -(h + 2)] });
 }
 
-// ─── Landmark icon options ─────────────────────────────────────────────────────
+
+// ─── Landmark icons ────────────────────────────────────────────────────────────
 const LANDMARK_ICONS = [
   { value: "📍", label: "Pin" },
   { value: "🏢", label: "Office" },
@@ -134,151 +92,186 @@ const LANDMARK_ICONS = [
   { value: "🏋️", label: "Gym" },
   { value: "🍺", label: "Pub" },
   { value: "🚉", label: "Station" },
+  { value: "🏠", label: "Friend" },
   { value: "⭐", label: "Favourite" },
 ];
 
-// ─── Landmarks Panel ──────────────────────────────────────────────────────────
-function LandmarksPanel({ landmarks, onSave, workplaceAddress }) {
-  const [open, setOpen] = useState(false);
-  const [adding, setAdding] = useState(false);
+// ─── Landmarks Manager Modal ──────────────────────────────────────────────────
+function LandmarksManagerModal({ landmarks, onSave, categories, onSaveCategories, onClose }) {
   const [newName, setNewName] = useState("");
   const [newAddress, setNewAddress] = useState("");
   const [newIcon, setNewIcon] = useState("📍");
+  const [newCategory, setNewCategory] = useState("");
   const [saving, setSaving] = useState(false);
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [editId, setEditId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editIcon, setEditIcon] = useState("📍");
+  const [editCategory, setEditCategory] = useState("");
 
   const handleAdd = async () => {
     if (!newName.trim() || !newAddress.trim()) return;
     setSaving(true);
-    await onSave([...landmarks, { id: Date.now().toString(), name: newName.trim(), address: newAddress.trim(), icon: newIcon }]);
-    setNewName(""); setNewAddress(""); setNewIcon("📍"); setAdding(false);
+    await onSave([...landmarks, { id: Date.now().toString(), name: newName.trim(), address: newAddress.trim(), icon: newIcon, category: newCategory || "" }]);
+    setNewName(""); setNewAddress(""); setNewIcon("📍"); setNewCategory("");
     setSaving(false);
   };
 
   const handleDelete = (id) => onSave(landmarks.filter(l => l.id !== id));
 
+  const handleEdit = (l) => {
+    setEditId(l.id); setEditName(l.name); setEditAddress(l.address);
+    setEditIcon(l.icon); setEditCategory(l.category || "");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editName.trim() || !editAddress.trim()) return;
+    setSaving(true);
+    await onSave(landmarks.map(l => l.id === editId ? { ...l, name: editName.trim(), address: editAddress.trim(), icon: editIcon, category: editCategory } : l));
+    setEditId(null); setSaving(false);
+  };
+
+  const handleAddCategory = async () => {
+    const trimmed = newCatName.trim();
+    if (!trimmed || categories.includes(trimmed)) return;
+    await onSaveCategories([...categories, trimmed]);
+    setNewCatName(""); setAddingCategory(false);
+  };
+
+  const handleDeleteCategory = async (cat) => {
+    if (DEFAULT_LANDMARK_CATEGORIES.includes(cat)) return;
+    await onSaveCategories(categories.filter(c => c !== cat));
+  };
+
+  const grouped = {};
+  categories.forEach(c => { grouped[c] = landmarks.filter(l => l.category === c); });
+  const uncategorised = landmarks.filter(l => !l.category);
+
   return (
-    <div className="bg-card border-b-[1.5px] border-border shrink-0">
-      {/* Collapsed bar */}
-      <div
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-4 px-5 py-2.5 cursor-pointer select-none min-h-[44px]"
-      >
-        <span className="text-[9px] tracking-[0.2em] uppercase font-bold text-muted-foreground shrink-0">
-          Landmarks
-        </span>
-        <div className="flex gap-3.5 flex-wrap items-center flex-1 overflow-hidden">
-          {workplaceAddress && (
-            <span className="text-[11px] text-muted-foreground flex items-center gap-1 whitespace-nowrap">
-              🏢 <span className="max-w-[200px] overflow-hidden text-ellipsis inline-block">{workplaceAddress}</span>
-            </span>
-          )}
-          {landmarks.slice(0, 5).map(l => (
-            <span key={l.id} className="text-[11px] text-muted-foreground flex items-center gap-1 whitespace-nowrap">
-              {l.icon} {l.name.length > 18 ? l.name.slice(0, 18) + "…" : l.name}
-            </span>
-          ))}
-          {landmarks.length > 5 && (
-            <span className="text-[10px] text-muted-foreground/60">+{landmarks.length - 5} more</span>
-          )}
-          {!workplaceAddress && landmarks.length === 0 && (
-            <span className="text-[11px] text-muted-foreground/60 italic">None added yet — click to expand</span>
-          )}
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1100] p-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-7 py-5 border-b border-border">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Manage Landmarks</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Add places you care about — they'll appear on the map and in distance calculations.</p>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xl bg-transparent border-none cursor-pointer">×</button>
         </div>
-        <span className={cn("text-muted-foreground/60 text-[13px] shrink-0 transition-transform duration-200", open ? "rotate-0" : "-rotate-90")}>
-          ▾
-        </span>
-      </div>
 
-      {/* Expanded */}
-      {open && (
-        <div className="px-5 pb-4 pt-1 border-t border-border/50">
-          {!workplaceAddress && (
-            <p className="text-xs text-muted-foreground italic my-2.5 mb-3">
-              Tip: Set your workplace address in Gaff Tracker → Settings to pin it on the map.
-            </p>
-          )}
+        <div className="flex-1 overflow-y-auto px-7 py-5 scrollbar-thin">
+          {/* Categories */}
+          <div className="mb-5">
+            <div className="text-[9px] tracking-[0.15em] uppercase font-bold text-muted-foreground/70 mb-2">Categories</div>
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {categories.map(cat => (
+                <span key={cat} className="inline-flex items-center gap-1 px-2.5 py-1 border border-border rounded-lg text-xs text-foreground bg-background">
+                  {cat}
+                  {!DEFAULT_LANDMARK_CATEGORIES.includes(cat) && (
+                    <button onClick={() => handleDeleteCategory(cat)} className="border-none bg-transparent text-red-500 cursor-pointer text-sm leading-none pl-0.5">×</button>
+                  )}
+                </span>
+              ))}
+              {addingCategory ? (
+                <span className="inline-flex items-center gap-1">
+                  <Input type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="Category name" className="w-28 text-xs h-7" onKeyDown={e => { if (e.key === "Enter") handleAddCategory(); if (e.key === "Escape") setAddingCategory(false); }} autoFocus />
+                  <Button variant="default" size="sm" onClick={handleAddCategory} disabled={!newCatName.trim()} className="h-7 text-[10px] px-2">Add</Button>
+                  <Button variant="outline" size="sm" onClick={() => setAddingCategory(false)} className="h-7 text-[10px] px-2">×</Button>
+                </span>
+              ) : (
+                <button onClick={() => setAddingCategory(true)} className="text-[10px] text-muted-foreground/60 border border-dashed border-border rounded-lg px-2.5 py-1 bg-transparent cursor-pointer hover:border-foreground/30 transition-colors">+ Category</button>
+              )}
+            </div>
+          </div>
 
-          {/* Landmark chips */}
-          {landmarks.length > 0 && (
-            <div className="flex flex-wrap gap-2 my-2.5 mb-3.5">
-              {landmarks.map(l => (
-                <div key={l.id} className="flex items-center gap-1.5 px-2.5 py-[5px] border border-border bg-background rounded text-xs">
-                  <span>{l.icon}</span>
-                  <span className="text-foreground font-semibold">{l.name}</span>
-                  <span className="text-muted-foreground/60 text-[10px]">
-                    {l.address.length > 28 ? l.address.slice(0, 28) + "…" : l.address}
-                  </span>
-                  <button
-                    onClick={() => handleDelete(l.id)}
-                    className="border-none bg-none text-red-500 cursor-pointer text-base pl-1 leading-none"
-                  >
-                    ×
-                  </button>
-                </div>
+          {/* Landmarks by category */}
+          {categories.map(cat => {
+            const items = grouped[cat] || [];
+            if (items.length === 0) return null;
+            return (
+              <div key={cat} className="mb-4">
+                <div className="text-[9px] tracking-[0.12em] uppercase font-bold text-brand mb-1.5">{cat} ({items.length})</div>
+                {items.map(l => (
+                  <LandmarkRow key={l.id} l={l} editId={editId} editName={editName} editAddress={editAddress} editIcon={editIcon} editCategory={editCategory}
+                    setEditName={setEditName} setEditAddress={setEditAddress} setEditIcon={setEditIcon} setEditCategory={setEditCategory}
+                    categories={categories} onEdit={handleEdit} onSaveEdit={handleSaveEdit} onCancelEdit={() => setEditId(null)} onDelete={handleDelete} saving={saving} />
+                ))}
+              </div>
+            );
+          })}
+          {uncategorised.length > 0 && (
+            <div className="mb-4">
+              <div className="text-[9px] tracking-[0.12em] uppercase font-bold text-muted-foreground/60 mb-1.5">Uncategorised ({uncategorised.length})</div>
+              {uncategorised.map(l => (
+                <LandmarkRow key={l.id} l={l} editId={editId} editName={editName} editAddress={editAddress} editIcon={editIcon} editCategory={editCategory}
+                  setEditName={setEditName} setEditAddress={setEditAddress} setEditIcon={setEditIcon} setEditCategory={setEditCategory}
+                  categories={categories} onEdit={handleEdit} onSaveEdit={handleSaveEdit} onCancelEdit={() => setEditId(null)} onDelete={handleDelete} saving={saving} />
               ))}
             </div>
           )}
+          {landmarks.length === 0 && (
+            <p className="text-sm text-muted-foreground/60 italic text-center py-6">No landmarks yet. Add one below.</p>
+          )}
 
-          {/* Add form */}
-          {adding ? (
-            <div className="flex gap-2 flex-wrap items-end">
-              <Select
-                value={newIcon}
-                onChange={e => setNewIcon(e.target.value)}
-                className="w-14 text-xs"
-              >
+          {/* Add new */}
+          <div className="border-t border-border pt-5 mt-3">
+            <div className="text-[9px] tracking-[0.12em] uppercase font-bold text-muted-foreground/70 mb-3">Add Landmark</div>
+            <div className="grid grid-cols-[auto_1fr_auto_1fr_auto] gap-2.5 items-end">
+              <Select value={newIcon} onChange={e => setNewIcon(e.target.value)} className="w-[70px] text-sm h-9">
                 {LANDMARK_ICONS.map(ic => <option key={ic.value} value={ic.value}>{ic.value} {ic.label}</option>)}
               </Select>
-              <Input
-                type="text"
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
-                placeholder="Name (e.g. Sister's school)"
-                className="w-44 text-xs h-8"
-              />
-              <Input
-                type="text"
-                value={newAddress}
-                onChange={e => setNewAddress(e.target.value)}
-                placeholder="Address or postcode"
-                className="flex-1 min-w-[200px] text-xs h-8"
-                onKeyDown={e => e.key === "Enter" && handleAdd()}
-              />
-              <Button
-                variant="default"
-                size="sm"
-                onClick={handleAdd}
-                disabled={saving || !newName.trim() || !newAddress.trim()}
-                className="uppercase tracking-[0.06em] opacity-100 disabled:opacity-60"
-              >
+              <Input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name (e.g. Gym West)" className="text-sm h-9" />
+              <Select value={newCategory} onChange={e => setNewCategory(e.target.value)} className="w-[140px] text-sm h-9">
+                <option value="">No category</option>
+                {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              </Select>
+              <Input type="text" value={newAddress} onChange={e => setNewAddress(e.target.value)} placeholder="Address or postcode" className="text-sm h-9" onKeyDown={e => e.key === "Enter" && handleAdd()} />
+              <Button variant="default" size="sm" onClick={handleAdd} disabled={saving || !newName.trim() || !newAddress.trim()} className="h-9 px-5">
                 {saving ? "…" : "Add"}
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setAdding(false)}
-              >
-                Cancel
-              </Button>
             </div>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setAdding(true)}
-              className="uppercase tracking-[0.08em] text-[10px]"
-            >
-              + Add Landmark
-            </Button>
-          )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
-// ─── Map Controls Overlay (filter + sort) ────────────────────────────────────
-function MapControls({ customFields, sortBy, onSort, filters, onFilter, activeTab, onActiveTab, total, geocoding }) {
+function LandmarkRow({ l, editId, editName, editAddress, editIcon, editCategory, setEditName, setEditAddress, setEditIcon, setEditCategory, categories, onEdit, onSaveEdit, onCancelEdit, onDelete, saving }) {
+  if (editId === l.id) {
+    return (
+      <div className="flex gap-2 flex-wrap items-center py-1.5 px-2 bg-muted/50 rounded mb-1">
+        <Select value={editIcon} onChange={e => setEditIcon(e.target.value)} className="w-14 text-xs h-7">
+          {LANDMARK_ICONS.map(ic => <option key={ic.value} value={ic.value}>{ic.value}</option>)}
+        </Select>
+        <Input type="text" value={editName} onChange={e => setEditName(e.target.value)} className="w-32 text-xs h-7" />
+        <Select value={editCategory} onChange={e => setEditCategory(e.target.value)} className="w-28 text-xs h-7">
+          <option value="">No category</option>
+          {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+        </Select>
+        <Input type="text" value={editAddress} onChange={e => setEditAddress(e.target.value)} className="flex-1 min-w-[140px] text-xs h-7" onKeyDown={e => e.key === "Enter" && onSaveEdit()} />
+        <Button variant="default" size="sm" onClick={onSaveEdit} disabled={saving} className="h-7 text-[10px] px-2">Save</Button>
+        <Button variant="outline" size="sm" onClick={onCancelEdit} className="h-7 text-[10px] px-2">×</Button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-3 py-2.5 px-3 hover:bg-muted/30 rounded-lg group mb-0.5">
+      <span className="text-base">{l.icon}</span>
+      <span className="text-sm font-semibold text-foreground">{l.name}</span>
+      <span className="text-xs text-muted-foreground/50 truncate flex-1">{l.address}</span>
+      <span className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        <button onClick={() => onEdit(l)} className="text-xs text-brand bg-transparent border-none cursor-pointer font-semibold hover:underline">Edit</button>
+        <button onClick={() => onDelete(l.id)} className="text-xs text-red-500 bg-transparent border-none cursor-pointer font-semibold hover:underline">Delete</button>
+      </span>
+    </div>
+  );
+}
+
+// ─── Map Controls Overlay ─────────────────────────────────────────────────────
+function MapControls({ customFields, sortBy, onSort, filters, onFilter, activeTab, onActiveTab, total, geocoding, categories, visibleCategories, onToggleCategory, onManageLandmarks }) {
   const [open, setOpen] = useState(false);
   const rankingFields = customFields.filter(f => f.field_type === "ranking");
   const numberFields = customFields.filter(f => f.field_type === "number" || f.field_type === "cost");
@@ -295,13 +288,9 @@ function MapControls({ customFields, sortBy, onSort, filters, onFilter, activeTa
   const hasFilters = Object.values(filters).some(v => v !== "" && v !== undefined);
 
   return (
-    <div className="absolute top-3 left-3 z-10 w-60">
+    <div className="absolute top-3 left-3 z-[1000] w-60">
       <div className="bg-card/95 backdrop-blur border border-border rounded-xl shadow-xl overflow-hidden">
-        {/* Tab bar + toggle */}
-        <div className={cn(
-          "flex items-center px-2.5 py-2 gap-1.5",
-          open ? "border-b border-border/50" : ""
-        )}>
+        <div className={cn("flex items-center px-2.5 py-2 gap-1.5", open ? "border-b border-border/50" : "")}>
           {[{ key: "rent", label: "Rent" }, { key: "buy", label: "Buy" }].map(t => (
             <button
               key={t.key}
@@ -326,11 +315,8 @@ function MapControls({ customFields, sortBy, onSort, filters, onFilter, activeTa
             {hasFilters ? "● " : ""}{open ? "▴" : "▾"}
           </button>
         </div>
-
-        {/* Expanded controls */}
         {open && (
           <div className="p-3.5 max-h-[calc(100vh-200px)] overflow-y-auto">
-            {/* Sort */}
             <div className="mb-3.5">
               <div className="text-[8px] tracking-[0.18em] uppercase font-bold text-brand mb-1.5">
                 Sort — affects pin size &amp; colour
@@ -339,16 +325,11 @@ function MapControls({ customFields, sortBy, onSort, filters, onFilter, activeTa
                 {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </Select>
             </div>
-
-            {/* Filters */}
             <div>
               <div className="flex justify-between items-center mb-2">
                 <span className="text-[8px] tracking-[0.18em] uppercase font-bold text-brand">Filters</span>
                 {hasFilters && (
-                  <button
-                    onClick={() => onFilter({})}
-                    className="text-[9px] bg-none border-none text-brand cursor-pointer font-semibold"
-                  >
+                  <button onClick={() => onFilter({})} className="text-[9px] bg-none border-none text-brand cursor-pointer font-semibold">
                     Clear all
                   </button>
                 )}
@@ -397,7 +378,6 @@ function MapControls({ customFields, sortBy, onSort, filters, onFilter, activeTa
         )}
       </div>
 
-      {/* Rank legend */}
       <div className="mt-2 bg-card/95 backdrop-blur border border-border rounded-xl px-2.5 py-1.5 flex items-center gap-2 shadow-md">
         <div className="flex items-center gap-1">
           <div className="w-4 h-4 rounded-full bg-[hsl(120,78%,40%)] border-2 border-white shadow-sm" />
@@ -410,53 +390,212 @@ function MapControls({ customFields, sortBy, onSort, filters, onFilter, activeTa
         </div>
       </div>
 
-      {/* Key for special markers */}
-      <div className="mt-1.5 bg-card/95 backdrop-blur border border-border rounded-xl px-2.5 py-1.5 flex gap-3 shadow-md">
-        <span className="text-[9px] text-muted-foreground flex items-center gap-1">🏢 Workplace</span>
-        <span className="text-[9px] text-muted-foreground flex items-center gap-1">📍 Landmark</span>
+      <div className="mt-1.5 bg-card/95 backdrop-blur border border-border rounded-xl px-2.5 py-1.5 shadow-md">
+        <div className="flex gap-3 flex-wrap items-center">
+          <span className="text-[9px] text-muted-foreground flex items-center gap-1">🏢 Workplace</span>
+          <span className="text-[9px] text-muted-foreground flex items-center gap-1">📍 Landmark</span>
+        </div>
+        {categories.length > 0 && (
+          <div className="flex gap-2 flex-wrap items-center mt-1.5 pt-1.5 border-t border-border/50">
+            <span className="text-[8px] tracking-[0.12em] uppercase font-bold text-muted-foreground/60 mr-0.5">Show:</span>
+            {categories.map(cat => (
+              <label key={cat} className="flex items-center gap-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={visibleCategories[cat] !== false}
+                  onChange={() => onToggleCategory(cat)}
+                  className="w-3 h-3 accent-brand rounded cursor-pointer"
+                />
+                <span className="text-[9px] text-muted-foreground">{cat}</span>
+              </label>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={onManageLandmarks}
+          className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 px-3 text-[10px] font-semibold text-brand bg-brand/10 border border-brand/20 rounded-lg cursor-pointer hover:bg-brand/20 transition-colors"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L12 22"/><path d="M2 12L22 12"/></svg>
+          Manage Landmarks
+        </button>
       </div>
     </div>
   );
 }
 
-// ─── InfoWindow HTML builder ───────────────────────────────────────────────────
-function propertyInfoHTML(prop, rank, total) {
-  const price = prop.price > 0
-    ? `£${prop.price.toLocaleString("en-GB")}${prop.listing_type === "rent" ? "/mo" : ""}`
-    : null;
-  return `
-    <div style="font-family:Arial,sans-serif;min-width:190px;max-width:250px;line-height:1.4">
-      <div style="font-weight:700;font-size:14px;margin-bottom:3px">${prop.name}</div>
-      ${prop.location ? `<div style="font-size:11px;color:#777;margin-bottom:8px">${prop.location}</div>` : ""}
-      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px">
-        ${price ? `<span style="font-size:13px;font-weight:700;color:#1a1a1a">${price}</span>` : ""}
-        ${prop.bedrooms > 0 ? `<span style="font-size:12px;color:#555">🛏 ${prop.bedrooms}</span>` : ""}
-        ${prop.bathrooms > 0 ? `<span style="font-size:12px;color:#555">🚿 ${prop.bathrooms}</span>` : ""}
-        ${prop.size > 0 ? `<span style="font-size:12px;color:#555">${prop.size} ${prop.size_unit}</span>` : ""}
+// ─── Distance Matrix Modal ────────────────────────────────────────────────────
+export function DistanceMatrixModal({ properties, initialProperty, landmarks, workplaceAddress, onClose }) {
+  const [selectedIds, setSelectedIds] = useState(initialProperty ? [initialProperty.id] : []);
+  const [results, setResults] = useState({}); // { `${propId}_${landmarkId}_${mode}`: "12 min" }
+  const [calculating, setCalculating] = useState(false);
+  const [mode, setMode] = useState("car"); // car | foot | bike
+
+  // All target locations: workplace + landmarks
+  const targets = useMemo(() => {
+    const t = [];
+    if (workplaceAddress) t.push({ id: "__workplace", name: "🏢 Workplace", address: workplaceAddress, category: "" });
+    landmarks.forEach(l => t.push({ id: l.id, name: `${l.icon} ${l.name}`, address: l.address, category: l.category || "" }));
+    return t;
+  }, [landmarks, workplaceAddress]);
+
+  const selectedProps = properties.filter(p => selectedIds.includes(p.id));
+
+  // Calculate distances
+  const calculate = useCallback(async () => {
+    if (selectedProps.length === 0 || targets.length === 0) return;
+    setCalculating(true);
+    const newResults = { ...results };
+
+    for (const prop of selectedProps) {
+      const propCoord = await geocodeAddress(prop.location);
+      if (!propCoord) continue;
+
+      for (const target of targets) {
+        const key = `${prop.id}_${target.id}_${mode}`;
+        if (newResults[key]) continue; // already calculated
+
+        const targetCoord = await geocodeAddress(target.address);
+        if (!targetCoord) { newResults[key] = "—"; continue; }
+
+        const route = await getRouteDistance(propCoord, targetCoord, mode);
+        if (route) {
+          newResults[key] = `${route.duration} (${route.distance})`;
+        } else {
+          // fallback to haversine
+          const km = haversineKm(propCoord, targetCoord);
+          newResults[key] = `~${km.toFixed(1)} km (straight)`;
+        }
+        setResults({ ...newResults });
+      }
+    }
+    setResults(newResults);
+    setCalculating(false);
+  }, [selectedProps, targets, mode, results]);
+
+  useEffect(() => { calculate(); }, [selectedIds, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleProp = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1100] p-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Distance Matrix</h2>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Travel times from properties to all landmarks</p>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xl bg-transparent border-none cursor-pointer">×</button>
+        </div>
+
+        <div className="flex-1 overflow-auto px-6 py-4 scrollbar-thin">
+          {/* Property selector */}
+          <div className="mb-4">
+            <div className="text-[9px] tracking-[0.12em] uppercase font-bold text-muted-foreground/70 mb-1.5">Properties</div>
+            <div className="flex gap-1.5 flex-wrap">
+              {properties.filter(p => p.location).map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => toggleProp(p.id)}
+                  className={cn(
+                    "px-3 py-1.5 text-[11px] font-medium border rounded-lg cursor-pointer transition-colors",
+                    selectedIds.includes(p.id)
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border bg-transparent text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Mode selector */}
+          <div className="mb-4 flex items-center gap-2">
+            <span className="text-[9px] tracking-[0.12em] uppercase font-bold text-muted-foreground/70">Mode:</span>
+            {[{ key: "car", label: "🚗 Drive" }, { key: "foot", label: "🚶 Walk" }, { key: "bike", label: "🚴 Cycle" }].map(m => (
+              <button
+                key={m.key}
+                onClick={() => setMode(m.key)}
+                className={cn(
+                  "px-3 py-1 text-[11px] font-medium border rounded cursor-pointer transition-colors",
+                  mode === m.key
+                    ? "border-brand bg-brand text-white"
+                    : "border-border bg-transparent text-muted-foreground hover:bg-muted"
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
+            {calculating && <span className="text-[10px] text-muted-foreground/60 ml-2 animate-pulse">Calculating…</span>}
+          </div>
+
+          {/* Matrix table */}
+          {selectedProps.length > 0 && targets.length > 0 && (
+            <div className="overflow-x-auto border border-border rounded-xl">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-muted/50">
+                    <th className="text-left px-3 py-2.5 text-[9px] tracking-[0.1em] uppercase font-bold text-muted-foreground border-b border-border sticky left-0 bg-muted/50 z-10">
+                      Property
+                    </th>
+                    {targets.map(t => (
+                      <th key={t.id} className="text-center px-3 py-2.5 text-[9px] tracking-[0.06em] uppercase font-bold text-muted-foreground border-b border-border min-w-[120px]">
+                        <div>{t.name}</div>
+                        {t.category && <div className="text-[8px] text-muted-foreground/50 font-normal normal-case">{t.category}</div>}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedProps.map((prop, i) => (
+                    <tr key={prop.id} className={i % 2 === 0 ? "" : "bg-muted/20"}>
+                      <td className="px-3 py-2 font-medium text-foreground border-b border-border/50 sticky left-0 bg-card z-10 whitespace-nowrap">
+                        {prop.name}
+                        <div className="text-[10px] text-muted-foreground/60 font-normal">{prop.location}</div>
+                      </td>
+                      {targets.map(t => {
+                        const key = `${prop.id}_${t.id}_${mode}`;
+                        const val = results[key];
+                        return (
+                          <td key={t.id} className="text-center px-3 py-2 border-b border-border/50 text-muted-foreground">
+                            {val || <span className="text-muted-foreground/30">…</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {selectedProps.length === 0 && (
+            <p className="text-sm text-muted-foreground/60 italic text-center py-8">Select one or more properties above to see distances.</p>
+          )}
+          {targets.length === 0 && (
+            <p className="text-sm text-muted-foreground/60 italic text-center py-8">Add landmarks or set a workplace address to see distances.</p>
+          )}
+        </div>
       </div>
-      <div style="font-size:10px;color:#aaa;background:#f5f5f0;padding:4px 8px;display:inline-block">Rank #${rank} of ${total}</div>
-      ${prop.website_link ? `<br/><a href="${prop.website_link}" target="_blank" style="font-size:11px;color:#b8860b;text-decoration:none;margin-top:8px;display:inline-block">View listing →</a>` : ""}
     </div>
-  `;
+  );
 }
 
 // ─── Main MapView ─────────────────────────────────────────────────────────────
 export default function MapView() {
   const { user } = useAuth();
-  const mapRef = useRef(null);
-  const mapInstanceRef = useRef(null);
-  const markersRef = useRef([]);
-  const infoWindowRef = useRef(null);
+  const navigate = useNavigate();
 
   const [properties, setProperties] = useState([]);
   const [customFields, setCustomFields] = useState([]);
   const [landmarks, setLandmarks] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mapReady, setMapReady] = useState(false);
-  const [sdkError, setSdkError] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
 
-  // geocoded positions keyed by property id
   const [propCoords, setPropCoords] = useState({});
   const [workplaceCoord, setWorkplaceCoord] = useState(null);
   const [landmarkCoords, setLandmarkCoords] = useState({});
@@ -464,18 +603,34 @@ export default function MapView() {
   const [activeTab, setActiveTab] = useState("rent");
   const [sortBy, setSortBy] = useState("date_desc");
   const [filters, setFilters] = useState({});
+  const [selectedProperty, setSelectedProperty] = useState(null);
+  const [visibleCategories, setVisibleCategories] = useState({});
+  const [showLandmarksModal, setShowLandmarksModal] = useState(false);
 
   const workplaceAddress = getWorkplaceAddress(user);
 
-  // ── Load data ──────────────────────────────────────────────────────────────
+  // Leaflet imperatives
+  const containerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markersRef = useRef([]);
+  const hasFitRef = useRef(false);
+
+  // ── Load data ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) { setLoading(false); return; }
     setLandmarks(getLandmarks(user));
+    const cats = getLandmarkCategories(user);
+    setCategories(cats);
+    // Default all categories visible
+    setVisibleCategories(prev => {
+      const next = { ...prev };
+      cats.forEach(c => { if (next[c] === undefined) next[c] = true; });
+      return next;
+    });
     Promise.all([loadProperties(), loadCustomFields()]).then(([pRes, cfRes]) => {
       const props = pRes.data || [];
       setProperties(props);
       setCustomFields(cfRes.data || []);
-      // Pre-populate coords from values stored during save — zero API calls for known properties
       const stored = {};
       props.forEach(p => {
         if (p.custom_values?.__lat != null && p.custom_values?.__lng != null) {
@@ -487,167 +642,149 @@ export default function MapView() {
     });
   }, [user]);
 
-  // ── Boot Maps SDK ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!GMAPS_KEY) return;
-    loadMapsSDK().then(() => setMapReady(true)).catch(() => setSdkError(true));
-  }, []);
-
-  // ── Init map instance ──────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!mapReady || !mapRef.current || mapInstanceRef.current) return;
-    mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
-      center: { lat: 53.5, lng: -2.2 },
-      zoom: 6,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: true,
-      styles: [
-        { featureType: "poi", stylers: [{ visibility: "off" }] },
-        { featureType: "transit", stylers: [{ visibility: "simplified" }] },
-      ],
-    });
-    infoWindowRef.current = new window.google.maps.InfoWindow();
-  }, [mapReady]);
-
-  // ── Filtered + sorted list ─────────────────────────────────────────────────
+  // ── Filtered + sorted list ───────────────────────────────────────────────────
   const displayed = useMemo(
     () => applySort(applyFilters(properties, filters, customFields, activeTab), sortBy),
     [properties, filters, customFields, activeTab, sortBy],
   );
 
-  // ── Geocode missing property addresses ─────────────────────────────────────
+  // ── Geocode missing property addresses ───────────────────────────────────────
   useEffect(() => {
-    if (!mapReady) return;
     const missing = displayed.filter(p => p.location && !propCoords[p.id]);
     if (!missing.length) return;
+    let cancelled = false;
     setGeocoding(true);
-    Promise.all(missing.map(async p => ({ id: p.id, coord: await geocodeAddress(p.location) })))
-      .then(results => {
+    (async () => {
+      const results = [];
+      for (const p of missing) {
+        if (cancelled) break;
+        const coord = await geocodeAddress(p.location);
+        results.push({ id: p.id, coord });
+      }
+      if (!cancelled) {
         setPropCoords(prev => {
           const next = { ...prev };
           results.forEach(({ id, coord }) => { if (coord) next[id] = coord; });
           return next;
         });
         setGeocoding(false);
-      });
-  }, [displayed, mapReady]);
-
-  // ── Geocode workplace ──────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!mapReady || !workplaceAddress) return;
-    geocodeAddress(workplaceAddress).then(setWorkplaceCoord);
-  }, [mapReady, workplaceAddress]);
-
-  // ── Geocode landmarks ──────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!mapReady) return;
-    landmarks.forEach(async l => {
-      if (!landmarkCoords[l.id] && l.address) {
-        const coord = await geocodeAddress(l.address);
-        if (coord) setLandmarkCoords(prev => ({ ...prev, [l.id]: coord }));
       }
-    });
-  }, [mapReady, landmarks]);
+    })();
+    return () => { cancelled = true; };
+  }, [displayed]);
 
-  // ── Rebuild markers whenever inputs change ─────────────────────────────────
+  // ── Geocode workplace ────────────────────────────────────────────────────────
   useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map || !mapReady) return;
+    if (!workplaceAddress) return;
+    geocodeAddress(workplaceAddress).then(setWorkplaceCoord);
+  }, [workplaceAddress]);
 
-    // Clear previous markers
-    markersRef.current.forEach(m => m.setMap(null));
+  // ── Geocode landmarks ────────────────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      for (const l of landmarks) {
+        if (!landmarkCoords[l.id] && l.address) {
+          const coord = await geocodeAddress(l.address);
+          if (coord) setLandmarkCoords(prev => ({ ...prev, [l.id]: coord }));
+        }
+      }
+    })();
+  }, [landmarks]);
+
+  // ── Initialise Leaflet map ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user || !containerRef.current || mapRef.current) return;
+    const map = L.map(containerRef.current, { center: [53.5, -2.2], zoom: 6, zoomControl: true });
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+      subdomains: "abcd",
+      maxZoom: 20,
+    }).addTo(map);
+    mapRef.current = map;
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      hasFitRef.current = false;
+    };
+  }, [user]);
+
+  // ── Update markers imperatively ──────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Clear old markers
+    markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
-    const bounds = new window.google.maps.LatLngBounds();
-    let hasPoints = false;
     const total = displayed.length;
+    const coordsToFit = [];
 
-    // Property pins
+    // Property markers
     displayed.forEach((prop, idx) => {
       const coord = propCoords[prop.id];
       if (!coord) return;
-
       const ratio = total > 1 ? idx / (total - 1) : 0;
-      const color = rankColor(ratio);
-      const size = rankSize(ratio);
       const rank = idx + 1;
-
-      const marker = new window.google.maps.Marker({
-        position: coord,
-        map,
-        icon: propertyMarkerIcon(color, size, String(rank)),
-        title: prop.name,
-        zIndex: total - idx + 10,
-      });
-
-      marker.addListener("click", () => {
-        infoWindowRef.current.setContent(propertyInfoHTML(prop, rank, total));
-        infoWindowRef.current.open(map, marker);
-      });
-
+      const marker = L.marker([coord.lat, coord.lng], {
+        icon: propertyMarkerIcon(rankColor(ratio), rankSize(ratio), String(rank)),
+        zIndexOffset: total - idx + 10,
+      }).on("click", () => setSelectedProperty(prop)).addTo(map);
       markersRef.current.push(marker);
-      bounds.extend(coord);
-      hasPoints = true;
+      coordsToFit.push([coord.lat, coord.lng]);
     });
 
-    // Workplace pin (gold) — use a fixed amber hex consistent with the accent colour
+    // Workplace marker
     if (workplaceCoord) {
-      const marker = new window.google.maps.Marker({
-        position: workplaceCoord,
-        map,
-        icon: specialMarkerIcon("🏢", "#b8860b", 36),
-        title: "Workplace",
-        zIndex: 9999,
-      });
-      marker.addListener("click", () => {
-        infoWindowRef.current.setContent(`<div style="font-family:Arial,sans-serif"><strong>🏢 Workplace</strong><br/><span style="font-size:11px;color:#777">${workplaceAddress}</span></div>`);
-        infoWindowRef.current.open(map, marker);
-      });
+      const marker = L.marker([workplaceCoord.lat, workplaceCoord.lng], {
+        icon: specialMarkerIcon("🏢", "#b8860b", 40),
+        zIndexOffset: 9999,
+      }).bindPopup(`<div style="font-family:Arial,sans-serif"><strong>🏢 Workplace</strong><br><span style="font-size:11px;color:#777">${workplaceAddress || ""}</span></div>`).addTo(map);
       markersRef.current.push(marker);
-      bounds.extend(workplaceCoord);
-      hasPoints = true;
+      coordsToFit.push([workplaceCoord.lat, workplaceCoord.lng]);
     }
 
-    // Landmark pins (dark)
+    // Landmark markers (respect category visibility)
     landmarks.forEach(l => {
+      if (l.category && !visibleCategories[l.category]) return;
       const coord = landmarkCoords[l.id];
       if (!coord) return;
-      const marker = new window.google.maps.Marker({
-        position: coord,
-        map,
-        icon: specialMarkerIcon(l.icon, "#3a3a3a", 32),
-        title: l.name,
-        zIndex: 9998,
-      });
-      marker.addListener("click", () => {
-        infoWindowRef.current.setContent(`<div style="font-family:Arial,sans-serif"><strong>${l.icon} ${l.name}</strong><br/><span style="font-size:11px;color:#777">${l.address}</span></div>`);
-        infoWindowRef.current.open(map, marker);
-      });
+      const marker = L.marker([coord.lat, coord.lng], {
+        icon: specialMarkerIcon(l.icon, "#555", 36),
+        zIndexOffset: 9998,
+      }).bindPopup(`<div style="font-family:Arial,sans-serif"><strong>${l.icon} ${l.name}</strong>${l.category ? `<br><span style="font-size:10px;color:#999">${l.category}</span>` : ""}<br><span style="font-size:11px;color:#777">${l.address}</span></div>`).addTo(map);
       markersRef.current.push(marker);
-      bounds.extend(coord);
-      hasPoints = true;
+      coordsToFit.push([coord.lat, coord.lng]);
     });
 
-    if (hasPoints && !bounds.isEmpty()) {
-      map.fitBounds(bounds, { top: 60, bottom: 40, left: 260, right: 40 });
+    // Fit bounds on first meaningful data load
+    if (coordsToFit.length > 0 && !hasFitRef.current) {
+      const bounds = L.latLngBounds(coordsToFit);
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { paddingTopLeft: [270, 60], paddingBottomRight: [40, 40] });
+        hasFitRef.current = true;
+      }
     }
-  }, [displayed, propCoords, workplaceCoord, landmarkCoords, mapReady]);
+  }, [displayed, propCoords, workplaceCoord, workplaceAddress, landmarks, landmarkCoords, visibleCategories]);
 
-  // ── Save landmarks ─────────────────────────────────────────────────────────
+  // ── Save landmarks ────────────────────────────────────────────────────────────
   const handleSaveLandmarks = async (updated) => {
     await saveLandmarks(updated);
     setLandmarks(updated);
-    // eagerly geocode any new ones
-    updated.forEach(async l => {
+    for (const l of updated) {
       if (!landmarkCoords[l.id] && l.address) {
         const coord = await geocodeAddress(l.address);
         if (coord) setLandmarkCoords(prev => ({ ...prev, [l.id]: coord }));
       }
-    });
+    }
   };
 
-  // ── Fallbacks ──────────────────────────────────────────────────────────────
+  const handleSaveCategories = async (updated) => {
+    await saveLandmarkCategories(updated);
+    setCategories(updated);
+  };
+
+  // ── Not signed in ─────────────────────────────────────────────────────────────
   if (!user) {
     return (
       <div className="text-center px-5 py-20">
@@ -657,30 +794,13 @@ export default function MapView() {
     );
   }
 
-  if (!GMAPS_KEY) {
-    return (
-      <div className="text-center px-5 py-20">
-        <h2 className="text-2xl font-normal text-foreground mb-3">Map View</h2>
-        <p className="text-muted-foreground mb-2">A Google Maps API key is required to use this page.</p>
-        <p className="text-xs text-muted-foreground/70">Add <code>VITE_GOOGLE_MAPS_API_KEY</code> to your environment variables.</p>
-      </div>
-    );
-  }
+  const total = displayed.length;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-[calc(100vh-117px)]">
-      {/* Landmarks panel */}
-      <LandmarksPanel
-        landmarks={landmarks}
-        onSave={handleSaveLandmarks}
-        workplaceAddress={workplaceAddress}
-      />
-
-      {/* Map area */}
       <div className="flex-1 relative overflow-hidden">
-        {/* Map canvas */}
-        <div ref={mapRef} className="w-full h-full" />
+        {/* Leaflet map container — vanilla, no react-leaflet */}
+        <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
 
         {/* Controls overlay */}
         <MapControls
@@ -691,20 +811,22 @@ export default function MapView() {
           onFilter={setFilters}
           activeTab={activeTab}
           onActiveTab={setActiveTab}
-          total={displayed.length}
+          total={total}
           geocoding={geocoding}
+          categories={categories}
+          visibleCategories={visibleCategories}
+          onToggleCategory={(cat) => setVisibleCategories(prev => ({ ...prev, [cat]: prev[cat] === false ? true : false }))}
+          onManageLandmarks={() => setShowLandmarksModal(true)}
         />
 
-        {/* Loading / geocoding toast */}
         {(loading || geocoding) && (
-          <div className="absolute bottom-4 right-4 bg-card border border-border rounded-lg px-3.5 py-1.5 text-[11px] text-muted-foreground shadow-md">
+          <div className="absolute bottom-4 right-4 bg-card border border-border rounded-lg px-3.5 py-1.5 text-[11px] text-muted-foreground shadow-md z-[1000]">
             {loading ? "Loading properties…" : "Placing pins…"}
           </div>
         )}
 
-        {/* No properties message */}
         {!loading && displayed.length === 0 && (
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-card border border-border rounded-xl px-8 py-6 text-center shadow-xl">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-card border border-border rounded-xl px-8 py-6 text-center shadow-xl z-[1000]">
             <p className="text-muted-foreground italic m-0">
               {properties.filter(p => p.listing_type === activeTab).length === 0
                 ? `No ${activeTab} properties saved yet. Add some in Gaff Tracker.`
@@ -712,14 +834,36 @@ export default function MapView() {
             </p>
           </div>
         )}
-
-        {/* SDK error */}
-        {sdkError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background text-red-500 text-base text-center p-8">
-            Failed to load Google Maps. Check your API key and network connection.
-          </div>
-        )}
       </div>
+
+      {selectedProperty && (
+        <PropertyDetailModal
+          property={selectedProperty}
+          customFields={customFields}
+          workplaceAddress={workplaceAddress}
+          landmarks={landmarks}
+          costPerMile={null}
+          onEdit={() => { setSelectedProperty(null); navigate("/gaff", { state: { editPropertyId: selectedProperty.id } }); }}
+          onClose={() => setSelectedProperty(null)}
+          mobile={false}
+          userId={user?.id}
+          displayCurrency={null}
+          rates={null}
+          onMainPhotoChange={() => {}}
+          onMarkSold={null}
+        />
+      )}
+
+      {showLandmarksModal && (
+        <LandmarksManagerModal
+          landmarks={landmarks}
+          onSave={handleSaveLandmarks}
+          categories={categories}
+          onSaveCategories={handleSaveCategories}
+          onClose={() => setShowLandmarksModal(false)}
+        />
+      )}
+
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
+import "leaflet/dist/leaflet.css";
 import "react-easy-crop/react-easy-crop.css";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "./lib/theme";

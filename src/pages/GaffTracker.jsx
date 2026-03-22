@@ -45,6 +45,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import Cropper from "react-easy-crop";
 import { C, fonts, fmt } from "../lib/tokens";
 import { useIsMobile, useAuth } from "../lib/hooks";
@@ -53,11 +54,13 @@ import {
   loadProperties, saveProperty, updateProperty, deleteProperty,
   loadCustomFields, saveCustomField, deleteCustomField, updateCustomField,
   saveWorkplaceAddress, getWorkplaceAddress,
+  saveCostPerMile, getCostPerMile,
+  getLandmarks, getLandmarkCategories,
   loadPropertyPhotos, savePropertyPhoto, updatePropertyPhoto, deletePropertyPhoto,
   uploadPropertyPhotoMulti, setMainPhoto,
 } from "../lib/supabase";
 
-const GMAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+import { geocodeAddress, getRouteDistance, mapsDirectionUrl, haversineKm } from "../lib/geo";
 
 // ─── Inject hover-animation CSS once ─────────────────────────────────────────
 let _stylesInjected = false;
@@ -346,6 +349,7 @@ function PhotoCarousel({ propertyId, userId, onMainPhotoChange }) {
 
   const _addPhotoRecord = async (url, note, isMain) => {
     const sortOrder = photos?.length ?? 0;
+    if (sortOrder === 0) isMain = true; // first photo always becomes main
     const { data: photo, error: saveErr } = await savePropertyPhoto(propertyId, { url, note: note || null, is_main: isMain, sort_order: sortOrder });
     if (saveErr || !photo) { setUploadError(saveErr?.message || "Failed to save photo record."); return; }
     if (isMain) {
@@ -617,6 +621,14 @@ function CustomFieldInput({ field, value, onChange }) {
       </div>
     );
   }
+  if (field.field_type === "location") {
+    // Rendered separately in the commute section, not here
+    return null;
+  }
+  if (isNearestField(field)) {
+    // Rendered separately in the landmarks section, not here
+    return null;
+  }
   if (field.field_type === "cost") {
     return (
       <div style={{ display: "flex", alignItems: "stretch", maxWidth: 160 }}>
@@ -654,49 +666,11 @@ function CustomFieldInput({ field, value, onChange }) {
 
 // ─── Distance to work section ─────────────────────────────────────────────────
 const TRAVEL_MODES = [
-  { key: "WALKING", label: "Walk", icon: "🚶", gm: "walking" },
-  { key: "DRIVING", label: "Drive", icon: "🚗", gm: "driving" },
-  { key: "BICYCLING", label: "Cycle", icon: "🚲", gm: "bicycling" },
-  { key: "TRANSIT", label: "Transit", icon: "🚌", gm: "transit" },
+  { key: "foot",    label: "Walk",    icon: "🚶", gm: "walking",   osrm: "foot" },
+  { key: "car",     label: "Drive",   icon: "🚗", gm: "driving",   osrm: "car" },
+  { key: "bike",    label: "Cycle",   icon: "🚲", gm: "bicycling", osrm: "bike" },
+  { key: "transit", label: "Transit", icon: "🚌", gm: "transit",   osrm: null },
 ];
-
-function mapsDirectionUrl(origin, dest, mode) {
-  return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}&travelmode=${mode}`;
-}
-
-async function loadMapsSDK() {
-  if (window.google?.maps?.DistanceMatrixService) return;
-  return new Promise((resolve, reject) => {
-    if (document.querySelector("[data-gmaps]")) {
-      const t = setInterval(() => { if (window.google?.maps) { clearInterval(t); resolve(); } }, 100);
-      return;
-    }
-    const sc = document.createElement("script");
-    sc.setAttribute("data-gmaps", "1");
-    sc.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}`;
-    sc.onload = resolve; sc.onerror = reject;
-    document.head.appendChild(sc);
-  });
-}
-
-// Geocode an address to {lat, lng} — returns null on failure
-async function geocodePropertyLocation(address) {
-  if (!address?.trim() || !GMAPS_KEY) return null;
-  try {
-    await loadMapsSDK();
-    return new Promise(resolve => {
-      new window.google.maps.Geocoder().geocode({ address }, (results, status) => {
-        if (status === "OK" && results[0]) {
-          resolve({ lat: results[0].geometry.location.lat(), lng: results[0].geometry.location.lng() });
-        } else {
-          resolve(null);
-        }
-      });
-    });
-  } catch {
-    return null;
-  }
-}
 
 function DistanceSection({ location, workplaceAddress, propertyId, customValues }) {
   // Cache key is the normalised workplace address
@@ -708,41 +682,45 @@ function DistanceSection({ location, workplaceAddress, propertyId, customValues 
 
   useEffect(() => {
     if (!workplaceAddress || !location) return;
-    if (!GMAPS_KEY) return;
     // Already have cached distances for this workplace — skip the API call
     if (cachedDistances) return;
     let cancelled = false;
     setLoading(true);
-    loadMapsSDK().then(() => {
-      if (cancelled) return;
-      const svc = new window.google.maps.DistanceMatrixService();
-      const results = {};
-      let pending = TRAVEL_MODES.length;
-      TRAVEL_MODES.forEach(({ key }) => {
-        svc.getDistanceMatrix({ origins: [workplaceAddress], destinations: [location], travelMode: key },
-          (resp, status) => {
-            if (!cancelled) {
-              if (status === "OK") {
-                const el = resp.rows[0].elements[0];
-                results[key] = el.status === "OK" ? { duration: el.duration.text, distance: el.distance.text } : null;
-              }
-            }
-            if (--pending === 0 && !cancelled) {
-              setDistances(results);
-              setLoading(false);
-              // Persist distances so we never re-fetch for this property + workplace combo
-              if (propertyId) {
-                updateProperty(propertyId, {
-                  custom_values: {
-                    ...(customValues || {}),
-                    __distances: { ...(customValues?.__distances || {}), [cacheKey]: results },
-                  },
-                }).catch(() => {});
-              }
-            }
-          });
-      });
-    }).catch(() => { if (!cancelled) setLoading(false); });
+    (async () => {
+      try {
+        // Geocode both endpoints for OSRM (needs coordinates)
+        const [originCoord, destCoord] = await Promise.all([
+          geocodeAddress(workplaceAddress),
+          geocodeAddress(location),
+        ]);
+        if (cancelled || !originCoord || !destCoord) { if (!cancelled) setLoading(false); return; }
+
+        const results = {};
+        for (const { key, osrm } of TRAVEL_MODES) {
+          if (cancelled) break;
+          if (osrm) {
+            results[key] = await getRouteDistance(originCoord, destCoord, osrm);
+          } else {
+            results[key] = null; // transit — no free API, user clicks through to Google Maps
+          }
+        }
+        if (!cancelled) {
+          setDistances(results);
+          setLoading(false);
+          // Persist distances so we never re-fetch for this property + workplace combo
+          if (propertyId) {
+            updateProperty(propertyId, {
+              custom_values: {
+                ...(customValues || {}),
+                __distances: { ...(customValues?.__distances || {}), [cacheKey]: results },
+              },
+            }).catch(() => {});
+          }
+        }
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
+    })();
     return () => { cancelled = true; };
   }, [location, workplaceAddress]);
 
@@ -770,8 +748,8 @@ function DistanceSection({ location, workplaceAddress, propertyId, customValues 
             {loading && <span style={{ fontSize: 10, color: C.textFaint, fontFamily: fonts.sans }}>...</span>}
             {d && <span style={{ fontSize: 12, color: C.text, fontFamily: fonts.serif, fontWeight: 400 }}>{d.duration}</span>}
             {d && <span style={{ fontSize: 10, color: C.textMid, fontFamily: fonts.sans }}>{d.distance}</span>}
-            {!loading && !d && distances && <span style={{ fontSize: 10, color: C.textFaint, fontFamily: fonts.sans }}>↗</span>}
-            {!GMAPS_KEY && <span style={{ fontSize: 10, color: C.textFaint, fontFamily: fonts.sans }}>↗ Open</span>}
+            {!loading && !d && distances && key !== "transit" && <span style={{ fontSize: 10, color: C.textFaint, fontFamily: fonts.sans }}>↗</span>}
+            {key === "transit" && !loading && <span style={{ fontSize: 10, color: C.textFaint, fontFamily: fonts.sans }}>↗ Open</span>}
           </a>
         );
       })}
@@ -798,7 +776,9 @@ function ModalCarousel({ propertyId, userId, onMainPhotoChange }) {
   const current = photos?.[idx] ?? null;
 
   const _addPhotoRecord = async (url, note, isMain) => {
-    const { data: photo, error } = await savePropertyPhoto(propertyId, { url, note: note || null, is_main: isMain, sort_order: photos?.length ?? 0 });
+    const sortOrder = photos?.length ?? 0;
+    if (sortOrder === 0) isMain = true; // first photo always becomes main
+    const { data: photo, error } = await savePropertyPhoto(propertyId, { url, note: note || null, is_main: isMain, sort_order: sortOrder });
     if (error || !photo) return;
     if (isMain) {
       const cleared = (photos || []).map(p => ({ ...p, is_main: false }));
@@ -913,20 +893,106 @@ const MAYBE_OPTS = [
 
 const isCustomFieldFilled = (field, value) => {
   if (field.field_type === "distance") return value != null && typeof value === "object" && value.n !== "" && value.n != null;
+  if (field.field_type === "location") return value != null && typeof value === "object" && value.name !== "" && value.name != null;
+  if (isNearestField(field)) return value != null && typeof value === "object" && value.name;
   return value !== undefined && value !== null && value !== "";
 };
 
 // ─── Property detail modal (Moda Living layout) ────────────────────────────────
-function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEdit, onClose, mobile, userId, displayCurrency, rates, onMainPhotoChange, onMarkSold }) {
+export function PropertyDetailModal({ property: p, customFields, workplaceAddress, landmarks, costPerMile, onEdit, onClose, mobile, userId, displayCurrency, rates, onMainPhotoChange, onMarkSold }) {
   const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
   const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
     ? fmtCurrency(gbp, displayCurrency, rates)
     : fmt(gbp);
 
+  // Live custom values — may be updated by auto-calculation below
+  const [liveCV, setLiveCV] = useState(p.custom_values || {});
+  const [nearestCalcLoading, setNearestCalcLoading] = useState(false);
+
   useEffect(() => {
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = ""; };
   }, []);
+
+  // Auto-detect and calculate nearest landmark distances when the detail modal opens
+  useEffect(() => {
+    const nearestFields = customFields.filter(f => isNearestField(f));
+    if (!nearestFields.length || !p.location) return;
+    let cancelled = false;
+    let anyWork = false;
+
+    (async () => {
+      const propCoord = await geocodeAddress(p.location);
+      if (cancelled || !propCoord) return;
+
+      const updatedCV = { ...liveCV };
+
+      for (const f of nearestFields) {
+        if (cancelled) break;
+        const category = nearestCategory(f);
+        const categoryLandmarks = (landmarks || []).filter(l => l.category === category);
+        if (!categoryLandmarks.length) continue;
+
+        let v = updatedCV[f.id];
+        const isEmpty = !v || !v.name;
+        const missingTimes = v?.name && (!v.walk || !v.drive || !v.cycle);
+        if (!isEmpty && !missingTimes) continue;
+
+        if (!anyWork) { anyWork = true; setNearestCalcLoading(true); }
+
+        let destCoord = null;
+        let chosenLandmark = null;
+
+        if (isEmpty) {
+          // Auto-detect nearest by haversine distance
+          const withCoords = await Promise.all(
+            categoryLandmarks.map(async l => ({ l, coord: await geocodeAddress(l.address) }))
+          );
+          if (cancelled) break;
+          const candidates = withCoords.filter(x => x.coord);
+          if (!candidates.length) continue;
+          const nearest = candidates.reduce((best, x) =>
+            haversineKm(propCoord, x.coord) < haversineKm(propCoord, best.coord) ? x : best
+          );
+          chosenLandmark = nearest.l;
+          destCoord = nearest.coord;
+        } else {
+          const landmark = categoryLandmarks.find(l => l.name === v.name);
+          destCoord = await geocodeAddress(landmark?.address || v.name);
+        }
+
+        if (cancelled || !destCoord) continue;
+
+        const [walk, drive, cycle] = await Promise.all([
+          getRouteDistance(propCoord, destCoord, "foot"),
+          getRouteDistance(propCoord, destCoord, "car"),
+          getRouteDistance(propCoord, destCoord, "bike"),
+        ]);
+
+        if (!cancelled) {
+          const current = updatedCV[f.id] || {};
+          const updated = { ...current };
+          if (chosenLandmark) { updated.name = chosenLandmark.name; updated.landmark_id = chosenLandmark.id; }
+          if (!current.walk && walk?.duration) updated.walk = walk.duration;
+          if (!current.drive && drive?.duration) updated.drive = drive.duration;
+          if (!current.cycle && cycle?.duration) updated.cycle = cycle.duration;
+          if (!current.petrol && drive?.distanceKm && Number(costPerMile) > 0) {
+            updated.petrol = (drive.distanceKm * 0.621371 * 2 * Number(costPerMile)).toFixed(2);
+          }
+          updatedCV[f.id] = updated;
+        }
+      }
+
+      if (!cancelled && anyWork) {
+        setNearestCalcLoading(false);
+        setLiveCV(updatedCV);
+        // Persist so Edit dialog and next Detail open don't have to recalculate
+        updateProperty(p.id, { custom_values: updatedCV }).catch(() => {});
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const darkStats = [
     p.bedrooms > 0 && { label: "Beds", val: p.bedrooms, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5"><path d="M3 7v11"/><path d="M21 7v11"/><path d="M3 18h18"/><path d="M3 11h18"/><path d="M3 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/><path d="M13 11V8a2 2 0 012-2h4a2 2 0 012 2v3"/></svg> },
@@ -1064,7 +1130,7 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
             {/* Right: custom fields + commute + notes */}
             <div>
               {customFields.length > 0 && (() => {
-                const filled = customFields.filter(f => isCustomFieldFilled(f, p.custom_values?.[f.id]));
+                const filled = customFields.filter(f => isCustomFieldFilled(f, p.custom_values?.[f.id]) && f.field_type !== "distance" && f.field_type !== "location" && !isNearestField(f));
                 if (!filled.length) return null;
                 return (
                   <>
@@ -1094,7 +1160,7 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
                 );
               })()}
 
-              {/* Commute to Work — shown only if user entered any distance */}
+              {/* Commute to Work — built-in default location */}
               {(() => {
                 const cv = p.custom_values || {};
                 const modes = [
@@ -1110,7 +1176,7 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
                   <>
                     <div style={s.sectionHead}>Commute to Work</div>
                     {filledModes.length > 0 && (
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginBottom: hasCost ? 12 : 0 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginBottom: hasCost ? 12 : 24 }}>
                         {filledModes.map(m => (
                           <div key={m.key}>
                             <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 3 }}>{m.icon} {m.label}</div>
@@ -1137,6 +1203,120 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
                 );
               })()}
 
+              {/* Location custom fields — each displayed like commute */}
+              {(() => {
+                const cv = p.custom_values || {};
+                const locationFields = customFields.filter(f =>
+                  f.field_type === "location" && isCustomFieldFilled(f, cv[f.id])
+                );
+                if (!locationFields.length) return null;
+                const travelModes = [
+                  { key: "walk",    label: "Walk",    icon: "🚶" },
+                  { key: "drive",   label: "Drive",   icon: "🚗" },
+                  { key: "cycle",   label: "Cycle",   icon: "🚲" },
+                  { key: "transit", label: "Transit", icon: "🚌" },
+                ];
+                return locationFields.map(f => {
+                  const val = cv[f.id];
+                  const filledModes = travelModes.filter(m => val[m.key]);
+                  if (!filledModes.length && !val.name) return null;
+                  return (
+                    <div key={f.id}>
+                      <div style={s.sectionHead}>📍 {val.name || f.name}</div>
+                      {filledModes.length > 0 && (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginBottom: 24 }}>
+                          {filledModes.map(m => (
+                            <div key={m.key}>
+                              <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 3 }}>{m.icon} {m.label}</div>
+                              <div style={{ fontSize: 14, fontFamily: fonts.sans, color: C.text }}>{val[m.key]}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {!filledModes.length && (
+                        <div style={{ fontSize: 13, fontFamily: fonts.sans, color: C.textLight, fontStyle: "italic", marginBottom: 24 }}>No travel times entered yet</div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+
+              {/* Nearest landmark fields — auto-calculated from liveCV */}
+              {(() => {
+                const nearestFields = customFields.filter(f => isNearestField(f));
+                if (!nearestFields.length) return null;
+                const travelModes = [
+                  { key: "walk",    label: "Walk",    icon: "🚶" },
+                  { key: "drive",   label: "Drive",   icon: "🚗" },
+                  { key: "cycle",   label: "Cycle",   icon: "🚲" },
+                  { key: "transit", label: "Transit", icon: "🚌" },
+                ];
+                return nearestFields.map(f => {
+                  const val = liveCV[f.id];
+                  const isLoading = nearestCalcLoading && (!val?.name || !val?.walk);
+                  if (isLoading) {
+                    return (
+                      <div key={f.id} style={{ marginBottom: 24 }}>
+                        <div style={s.sectionHead}>📍 {f.name}</div>
+                        <div style={{ fontSize: 12, fontFamily: fonts.sans, color: C.textFaint, fontStyle: "italic" }}>Finding nearest & calculating times…</div>
+                      </div>
+                    );
+                  }
+                  if (!val?.name) return null;
+                  const filledModes = travelModes.filter(m => val[m.key]);
+                  const hasCost = val.petrol || val.transport;
+                  return (
+                    <div key={f.id}>
+                      <div style={{ ...s.sectionHead, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span>📍 {f.name}: {val.name}</span>
+                        {nearestCalcLoading && <span style={{ fontSize: 10, fontFamily: fonts.sans, color: C.textFaint, fontStyle: "italic", textTransform: "none", letterSpacing: 0 }}>calculating…</span>}
+                      </div>
+                      {filledModes.length > 0 && (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginBottom: hasCost ? 12 : 24 }}>
+                          {filledModes.map(m => (
+                            <div key={m.key}>
+                              <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 3 }}>{m.icon} {m.label}</div>
+                              <div style={{ fontSize: 14, fontFamily: fonts.sans, color: C.text }}>{val[m.key]}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {hasCost && (
+                        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
+                          {val.petrol && <div style={{ fontSize: 12, fontFamily: fonts.sans, color: C.textMid }}>🚗 Car: <strong style={{ color: C.text }}>£{Number(val.petrol).toFixed(2)}</strong>/trip</div>}
+                          {val.transport && <div style={{ fontSize: 12, fontFamily: fonts.sans, color: C.textMid }}>🚌 Transit: <strong style={{ color: C.text }}>£{Number(val.transport).toFixed(2)}</strong>/trip</div>}
+                        </div>
+                      )}
+                      {!filledModes.length && !hasCost && !nearestCalcLoading && (
+                        <div style={{ fontSize: 13, fontFamily: fonts.sans, color: C.textLight, fontStyle: "italic", marginBottom: 24 }}>No travel times or costs entered yet</div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+
+              {/* Distance custom fields — shown alongside commute data */}
+              {(() => {
+                const cv = p.custom_values || {};
+                const distanceFields = customFields.filter(f =>
+                  f.field_type === "distance" && isCustomFieldFilled(f, cv[f.id])
+                );
+                if (!distanceFields.length) return null;
+                return (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginBottom: 24 }}>
+                    {distanceFields.map(f => {
+                      const val = cv[f.id];
+                      return (
+                        <div key={f.id}>
+                          <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: fonts.sans, color: C.textLight, marginBottom: 3 }}>{f.name}</div>
+                          <div style={{ fontSize: 14, fontFamily: fonts.sans, color: C.text }}>{val.n} {val.u || "mi"}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
               {p.notes && (
                 <>
                   <div style={s.sectionHead}>Notes</div>
@@ -1152,7 +1332,7 @@ function PropertyDetailModal({ property: p, customFields, workplaceAddress, onEd
 }
 
 // ─── Property card (Moda Living inspired) ──────────────────────────────────────
-function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onDelete, mobile, userId, displayCurrency, rates, onMainPhotoChange, onMarkSold }) {
+function PropertyCard({ property: p, customFields, workplaceAddress, landmarks, costPerMile, onEdit, onDelete, mobile, userId, displayCurrency, rates, onMainPhotoChange, onMarkSold }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
   const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
@@ -1255,6 +1435,8 @@ function PropertyCard({ property: p, customFields, workplaceAddress, onEdit, onD
           property={p}
           customFields={customFields}
           workplaceAddress={workplaceAddress}
+          landmarks={landmarks}
+          costPerMile={costPerMile}
           onEdit={onEdit}
           onClose={() => setDetailOpen(false)}
           mobile={mobile}
@@ -1280,7 +1462,239 @@ const EMPTY_FORM = {
   _commute_petrol: "", _commute_transport: "",
 };
 
-function PropertyDialog({ property, customFields, defaultListingType, onSave, onClose, onOpenSettings, mobile, userId, rates, workplaceAddress }) {
+// ─── Auto-calculating location field (for "location" type What Matters) ───────
+function LocationFieldSection({ f, v, onSet, propertyLocation, mobile }) {
+  const [autoLoading, setAutoLoading] = useState(false);
+
+  useEffect(() => {
+    if (!v.name || !propertyLocation) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setAutoLoading(true);
+      try {
+        const [propCoord, destCoord] = await Promise.all([
+          geocodeAddress(propertyLocation),
+          geocodeAddress(v.name),
+        ]);
+        if (cancelled || !propCoord || !destCoord) { if (!cancelled) setAutoLoading(false); return; }
+        const [walk, drive, cycle] = await Promise.all([
+          getRouteDistance(propCoord, destCoord, "foot"),
+          getRouteDistance(propCoord, destCoord, "car"),
+          getRouteDistance(propCoord, destCoord, "bike"),
+        ]);
+        if (!cancelled) {
+          setAutoLoading(false);
+          const updates = {};
+          if (!v.walk && walk?.duration) updates.walk = walk.duration;
+          if (!v.drive && drive?.duration) updates.drive = drive.duration;
+          if (!v.cycle && cycle?.duration) updates.cycle = cycle.duration;
+          if (Object.keys(updates).length > 0) onSet({ ...v, ...updates });
+        }
+      } catch { if (!cancelled) setAutoLoading(false); }
+    }, 800);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [v.name, propertyLocation]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ ...s.sectionHead, marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>📍 {f.name}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {autoLoading && <span style={{ fontSize: 10, fontFamily: fonts.sans, color: C.textFaint, fontStyle: "italic" }}>calculating…</span>}
+          {propertyLocation && v.name && (
+            <a href={mapsDirectionUrl(propertyLocation, v.name, "transit")} target="_blank" rel="noreferrer"
+              style={{ fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.accent, textDecoration: "none", textTransform: "none", letterSpacing: 0 }}>
+              Plan transit in Maps ↗
+            </a>
+          )}
+        </div>
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <label style={s.label}>Place name</label>
+        <input type="text" value={v.name} onChange={e => onSet({ ...v, name: e.target.value })}
+          placeholder="e.g. Victoria Station" style={s.textInput} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: "12px 16px" }}>
+        {[
+          { key: "walk", label: "Walk", icon: "🚶" },
+          { key: "drive", label: "Drive", icon: "🚗" },
+          { key: "cycle", label: "Cycle", icon: "🚲" },
+          { key: "transit", label: "Transit", icon: "🚌" },
+        ].map(({ key, label, icon }) => (
+          <div key={key}>
+            <label style={s.label}>{icon} {label}</label>
+            <input type="text" value={v[key] || ""} onChange={e => onSet({ ...v, [key]: e.target.value })}
+              placeholder="e.g. 25 min" style={s.textInput} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Auto-calculating nearest landmark field ───────────────────────────────────
+function NearestFieldSection({ f, v, onSet, categoryLandmarks, propertyLocation, costPerMile, mobile }) {
+  const [autoLoading, setAutoLoading] = useState(false);
+  const category = nearestCategory(f);
+
+  // Auto-detect nearest landmark when property location is known and no landmark is selected yet
+  useEffect(() => {
+    if (v.name || !propertyLocation || categoryLandmarks.length === 0) return;
+    let cancelled = false;
+    setAutoLoading(true);
+    (async () => {
+      try {
+        const propCoord = await geocodeAddress(propertyLocation);
+        if (cancelled || !propCoord) { if (!cancelled) setAutoLoading(false); return; }
+        // Geocode all landmarks and find nearest by straight-line distance
+        const withCoords = await Promise.all(
+          categoryLandmarks.map(async l => ({ l, coord: await geocodeAddress(l.address) }))
+        );
+        if (cancelled) return;
+        const candidates = withCoords.filter(x => x.coord);
+        if (!candidates.length) { setAutoLoading(false); return; }
+        const nearest = candidates.reduce((best, x) =>
+          haversineKm(propCoord, x.coord) < haversineKm(propCoord, best.coord) ? x : best
+        );
+        if (cancelled) return;
+        // Now get route times to the nearest landmark
+        const [walk, drive, cycle] = await Promise.all([
+          getRouteDistance(propCoord, nearest.coord, "foot"),
+          getRouteDistance(propCoord, nearest.coord, "car"),
+          getRouteDistance(propCoord, nearest.coord, "bike"),
+        ]);
+        if (!cancelled) {
+          setAutoLoading(false);
+          const updates = {
+            name: nearest.l.name,
+            landmark_id: nearest.l.id,
+            walk: walk?.duration || "",
+            drive: drive?.duration || "",
+            cycle: cycle?.duration || "",
+          };
+          if (drive?.distanceKm && Number(costPerMile) > 0) {
+            updates.petrol = (drive.distanceKm * 0.621371 * 2 * Number(costPerMile)).toFixed(2);
+          }
+          onSet({ ...v, ...updates });
+        }
+      } catch { if (!cancelled) setAutoLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [propertyLocation, categoryLandmarks.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Recalculate distances when landmark is manually changed
+  useEffect(() => {
+    if (!v.name || !propertyLocation) return;
+    // Only recalc if times are missing (e.g. after manual landmark change which clears them)
+    if (v.walk && v.drive && v.cycle) return;
+    const landmark = categoryLandmarks.find(l => l.name === v.name);
+    const destAddress = landmark?.address || v.name;
+    let cancelled = false;
+    setAutoLoading(true);
+    (async () => {
+      try {
+        const [propCoord, destCoord] = await Promise.all([
+          geocodeAddress(propertyLocation),
+          geocodeAddress(destAddress),
+        ]);
+        if (cancelled || !propCoord || !destCoord) { if (!cancelled) setAutoLoading(false); return; }
+        const [walk, drive, cycle] = await Promise.all([
+          getRouteDistance(propCoord, destCoord, "foot"),
+          getRouteDistance(propCoord, destCoord, "car"),
+          getRouteDistance(propCoord, destCoord, "bike"),
+        ]);
+        if (!cancelled) {
+          setAutoLoading(false);
+          const updates = {};
+          if (!v.walk && walk?.duration) updates.walk = walk.duration;
+          if (!v.drive && drive?.duration) updates.drive = drive.duration;
+          if (!v.cycle && cycle?.duration) updates.cycle = cycle.duration;
+          if (!v.petrol && drive?.distanceKm && Number(costPerMile) > 0) {
+            updates.petrol = (drive.distanceKm * 0.621371 * 2 * Number(costPerMile)).toFixed(2);
+          }
+          if (Object.keys(updates).length > 0) onSet({ ...v, ...updates });
+        }
+      } catch { if (!cancelled) setAutoLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [v.name, propertyLocation]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ ...s.sectionHead, marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>📍 {f.name}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {autoLoading && <span style={{ fontSize: 10, fontFamily: fonts.sans, color: C.textFaint, fontStyle: "italic" }}>calculating…</span>}
+          {propertyLocation && v.name && (
+            <a href={mapsDirectionUrl(propertyLocation, v.name, "transit")} target="_blank" rel="noreferrer"
+              style={{ fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.accent, textDecoration: "none", textTransform: "none", letterSpacing: 0 }}>
+              Plan transit in Maps ↗
+            </a>
+          )}
+        </div>
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <label style={s.label}>Nearest {category || "Landmark"}</label>
+        {categoryLandmarks.length > 0 ? (
+          autoLoading && !v.name ? (
+            <div style={{ fontSize: 13, fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", padding: "7px 0" }}>
+              Finding nearest {category || "landmark"}…
+            </div>
+          ) : (
+            <select
+              value={v.name || ""}
+              onChange={e => {
+                const selected = categoryLandmarks.find(l => l.name === e.target.value);
+                if (selected) {
+                  onSet({ ...v, name: selected.name, landmark_id: selected.id, walk: "", drive: "", cycle: "", petrol: "" });
+                } else {
+                  onSet({ ...v, name: e.target.value });
+                }
+              }}
+              style={{ ...s.textInput, cursor: "pointer" }}
+            >
+              <option value="">— change {category || "landmark"} —</option>
+              {categoryLandmarks.map(l => <option key={l.id} value={l.name}>{l.icon} {l.name}</option>)}
+            </select>
+          )
+        ) : (
+          <div style={{ fontSize: 12, fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", padding: "7px 0" }}>
+            No {category || "landmark"} landmarks added yet. Add them in Map View → Landmarks.
+          </div>
+        )}
+      </div>
+      {v.name && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: "12px 16px", marginBottom: 14 }}>
+            {[
+              { key: "walk", label: "Walk", icon: "🚶" },
+              { key: "drive", label: "Drive", icon: "🚗" },
+              { key: "cycle", label: "Cycle", icon: "🚲" },
+              { key: "transit", label: "Transit", icon: "🚌" },
+            ].map(({ key, label, icon }) => (
+              <div key={key}>
+                <label style={s.label}>{icon} {label}</label>
+                <input type="text" value={v[key] || ""} onChange={e => onSet({ ...v, [key]: e.target.value })} placeholder="e.g. 25 min" style={s.textInput} />
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: "12px 16px" }}>
+            <div>
+              <label style={s.label}>🚗 Car cost per round trip (£)</label>
+              <input type="number" min={0} step={0.5} value={v.petrol || ""} onChange={e => onSet({ ...v, petrol: e.target.value })} placeholder="e.g. 6.00" style={{ ...s.textInput, maxWidth: 160 }} />
+            </div>
+            <div>
+              <label style={s.label}>🚌 Public transport per round trip (£)</label>
+              <input type="number" min={0} step={0.5} value={v.transport || ""} onChange={e => onSet({ ...v, transport: e.target.value })} placeholder="e.g. 9.40" style={{ ...s.textInput, maxWidth: 160 }} />
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PropertyDialog({ property, customFields, defaultListingType, onSave, onClose, onOpenSettings, mobile, userId, rates, workplaceAddress, landmarks, costPerMile }) {
   const existingCurrency = property?.custom_values?.__price_currency || "GBP";
   const existingPriceLocal = property?.custom_values?.__price_local ?? property?.price ?? "";
   const [form, setForm] = useState(property ? {
@@ -1297,6 +1711,43 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
   } : { ...EMPTY_FORM, listing_type: defaultListingType });
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
+  const [autoCommuteLoading, setAutoCommuteLoading] = useState(false);
+
+  // Auto-calculate walk/drive/cycle commute times from OSRM when location + workplace are set
+  useEffect(() => {
+    if (!workplaceAddress || !form.location) return;
+    let cancelled = false;
+    setAutoCommuteLoading(true);
+    (async () => {
+      try {
+        const [originCoord, destCoord] = await Promise.all([
+          geocodeAddress(workplaceAddress),
+          geocodeAddress(form.location),
+        ]);
+        if (cancelled || !originCoord || !destCoord) { if (!cancelled) setAutoCommuteLoading(false); return; }
+        const [walk, drive, cycle] = await Promise.all([
+          getRouteDistance(originCoord, destCoord, "foot"),
+          getRouteDistance(originCoord, destCoord, "car"),
+          getRouteDistance(originCoord, destCoord, "bike"),
+        ]);
+        if (!cancelled) {
+          setAutoCommuteLoading(false);
+          setForm(f => {
+            const update = { ...f };
+            if (!f._commute_walk && walk?.duration) update._commute_walk = walk.duration;
+            if (!f._commute_drive && drive?.duration) update._commute_drive = drive.duration;
+            if (!f._commute_cycle && cycle?.duration) update._commute_cycle = cycle.duration;
+            if (!f._commute_petrol && drive?.distanceKm && Number(costPerMile) > 0) {
+              const miles = drive.distanceKm * 0.621371;
+              update._commute_petrol = (miles * 2 * Number(costPerMile)).toFixed(2);
+            }
+            return update;
+          });
+        }
+      } catch { if (!cancelled) setAutoCommuteLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [workplaceAddress, form.location]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const setCustom = (fieldId, v) => setForm(f => ({ ...f, custom_values: { ...f.custom_values, [fieldId]: v } }));
@@ -1321,8 +1772,8 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
     const hasCoords = property?.custom_values?.__lat != null;
     let customValues = { ...(form.custom_values || {}) };
     if (locationChanged) delete customValues.__distances; // stale distances for old address
-    if (GMAPS_KEY && form.location && (locationChanged || !hasCoords)) {
-      const coord = await geocodePropertyLocation(form.location);
+    if (form.location && (locationChanged || !hasCoords)) {
+      const coord = await geocodeAddress(form.location);
       if (coord) { customValues.__lat = coord.lat; customValues.__lng = coord.lng; }
     }
 
@@ -1488,18 +1939,21 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
           <div style={{ marginBottom: 16 }}>
             <div style={{ ...s.sectionHead, marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span>Commute to Work</span>
-              {workplaceAddress && form.location && (
-                <a
-                  href={`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(workplaceAddress)}&destination=${encodeURIComponent(form.location)}`}
-                  target="_blank" rel="noreferrer"
-                  style={{ fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.accent, textDecoration: "none", textTransform: "none", letterSpacing: 0 }}
-                >
-                  Check route in Google Maps ↗
-                </a>
-              )}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {autoCommuteLoading && <span style={{ fontSize: 10, fontFamily: fonts.sans, color: C.textFaint, fontStyle: "italic" }}>calculating…</span>}
+                {workplaceAddress && form.location && (
+                  <a
+                    href={mapsDirectionUrl(workplaceAddress, form.location, "transit")}
+                    target="_blank" rel="noreferrer"
+                    style={{ fontSize: 10, fontFamily: fonts.sans, fontWeight: 600, color: C.accent, textDecoration: "none", textTransform: "none", letterSpacing: 0 }}
+                  >
+                    Plan transit in Maps ↗
+                  </a>
+                )}
+              </div>
             </div>
             <p style={{ fontSize: 11, fontFamily: fonts.serif, color: C.textLight, fontStyle: "italic", margin: "0 0 12px", lineHeight: 1.5 }}>
-              Open the Maps link above, find your distances, then enter them below.
+              Walk, drive and cycle times are calculated automatically. Enter transit time manually or use the Maps link above.
             </p>
             {/* 4 travel modes */}
             <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: "12px 16px", marginBottom: 14 }}>
@@ -1528,6 +1982,42 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
             </div>
           </div>
 
+          {/* Location custom fields — each auto-calculates walk/drive/cycle */}
+          {customFields.filter(f => f.field_type === "location").map(f => {
+            const v = (typeof form.custom_values?.[f.id] === "object" && form.custom_values?.[f.id] !== null)
+              ? form.custom_values[f.id] : { name: "", walk: "", drive: "", cycle: "", transit: "" };
+            return (
+              <LocationFieldSection
+                key={f.id}
+                f={f}
+                v={v}
+                onSet={newV => setCustom(f.id, newV)}
+                propertyLocation={form.location}
+                mobile={mobile}
+              />
+            );
+          })}
+
+          {/* Nearest landmark sections — auto-calculate distances when landmark selected */}
+          {customFields.filter(f => isNearestField(f)).map(f => {
+            const category = nearestCategory(f);
+            const categoryLandmarks = (landmarks || []).filter(l => l.category === category);
+            const v = (typeof form.custom_values?.[f.id] === "object" && form.custom_values?.[f.id] !== null)
+              ? form.custom_values[f.id] : { name: "", walk: "", drive: "", cycle: "", transit: "", petrol: "", transport: "" };
+            return (
+              <NearestFieldSection
+                key={f.id}
+                f={f}
+                v={v}
+                onSet={newV => setCustom(f.id, newV)}
+                categoryLandmarks={categoryLandmarks}
+                propertyLocation={form.location}
+                costPerMile={costPerMile}
+                mobile={mobile}
+              />
+            );
+          })}
+
           {/* Notes */}
           <div style={{ marginBottom: 24 }}>
             <label style={s.label}>Notes</label>
@@ -1545,7 +2035,7 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
               </p>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: "16px 24px" }}>
-                {customFields.map(f => (
+                {customFields.filter(f => f.field_type !== "location" && !isNearestField(f)).map(f => (
                   <div key={f.id}>
                     <label style={{ ...s.label, marginBottom: 8 }}>{f.name}</label>
                     <CustomFieldInput field={f} value={form.custom_values?.[f.id]} onChange={v => setCustom(f.id, v)} />
@@ -1727,17 +2217,34 @@ const FIELD_TYPES = [
   { value: "maybe", label: "Yes / Maybe / No" },
   { value: "number", label: "Number" },
   { value: "distance", label: "Distance (mi or km)" },
+  { value: "location", label: "Location (place name)" },
+  { value: "nearest", label: "Nearest Landmark" },
   { value: "cost", label: "Cost (£)" },
   { value: "text", label: "Text" },
   { value: "ranking", label: "Ranking (1–10)" },
 ];
 
-function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpdated, workplaceAddress, onWorkplaceChange, mobile, open, onToggle }) {
+// Helper: extract category from a nearest-type field_type (e.g. "nearest:Train Station" → "Train Station")
+function nearestCategory(field) {
+  if (!field.field_type?.startsWith("nearest")) return null;
+  const idx = field.field_type.indexOf(":");
+  return idx >= 0 ? field.field_type.slice(idx + 1) : null;
+}
+
+// Helper: check if a field is a nearest-type
+function isNearestField(field) {
+  return field.field_type?.startsWith("nearest");
+}
+
+function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpdated, workplaceAddress, onWorkplaceChange, costPerMile, onCostPerMileChange, mobile, open, onToggle, landmarkCategories }) {
   const [wpEdit, setWpEdit] = useState(workplaceAddress);
   const [wpSaving, setWpSaving] = useState(false);
+  const [cpmEdit, setCpmEdit] = useState(costPerMile);
+  const [cpmSaving, setCpmSaving] = useState(false);
   const [addingField, setAddingField] = useState(false);
   const [newFieldName, setNewFieldName] = useState("");
   const [newFieldType, setNewFieldType] = useState("checkbox");
+  const [newNearestCategory, setNewNearestCategory] = useState("");
   const [editingFieldId, setEditingFieldId] = useState(null);
   const [editingFieldName, setEditingFieldName] = useState("");
 
@@ -1756,10 +2263,22 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpda
     setWpSaving(false);
   };
 
+  const handleSaveCpm = async () => {
+    setCpmSaving(true);
+    await saveCostPerMile(cpmEdit);
+    onCostPerMileChange(cpmEdit);
+    setCpmSaving(false);
+  };
+
   const handleAddField = async () => {
     if (!newFieldName.trim()) return;
-    const { data } = await saveCustomField(newFieldName.trim(), newFieldType);
-    if (data) { onFieldAdded(data); setNewFieldName(""); setAddingField(false); }
+    let fieldType = newFieldType;
+    if (newFieldType === "nearest") {
+      if (!newNearestCategory) return; // must pick a category
+      fieldType = `nearest:${newNearestCategory}`;
+    }
+    const { data } = await saveCustomField(newFieldName.trim(), fieldType);
+    if (data) { onFieldAdded(data); setNewFieldName(""); setNewNearestCategory(""); setAddingField(false); }
   };
 
   if (!open) return null;
@@ -1774,7 +2293,7 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpda
         </div>
       <div style={{ padding: "4px 22px 22px" }}>
           {/* Workplace address */}
-          <div style={{ marginTop: 16, marginBottom: 24 }}>
+          <div style={{ marginTop: 16, marginBottom: 16 }}>
             <div style={s.sectionHead}>Workplace Address</div>
             <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
               <div style={{ flex: 1 }}>
@@ -1785,7 +2304,23 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpda
                 {wpSaving ? "Saving..." : "Save"}
               </button>
             </div>
-            {!GMAPS_KEY && <div style={{ fontSize: 11, color: C.textMid, fontFamily: fonts.serif, fontStyle: "italic", marginTop: 8 }}>Add <code>VITE_GOOGLE_MAPS_API_KEY</code> to your env to auto-compute travel times. Without it, clicking a travel mode opens Google Maps directions.</div>}
+          </div>
+
+          {/* Driving cost */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={s.sectionHead}>Driving Cost</div>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}>
+                <label style={s.label}>Cost per mile (£)</label>
+                <input type="number" min={0} step={0.01} value={cpmEdit} onChange={e => setCpmEdit(e.target.value)} placeholder="e.g. 0.25" style={{ ...s.textInput, maxWidth: 160 }} />
+              </div>
+              <button onClick={handleSaveCpm} disabled={cpmSaving} style={{ ...s.btn(true), marginBottom: 2, padding: "8px 16px", whiteSpace: "nowrap" }}>
+                {cpmSaving ? "Saving..." : "Save"}
+              </button>
+            </div>
+            <p style={{ fontSize: 11, fontFamily: fonts.serif, color: C.textLight, fontStyle: "italic", margin: "8px 0 0", lineHeight: 1.5 }}>
+              Used to auto-calculate driving cost per round trip when adding properties.
+            </p>
           </div>
 
           {/* What Matters */}
@@ -1802,12 +2337,18 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpda
             </p>
 
             {addingField && (
-              <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: mobile ? "wrap" : "nowrap" }}>
-                <input type="text" value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="e.g. Has bathtub" style={{ ...s.textInput, flex: 1, minWidth: 120 }} />
-                <select value={newFieldType} onChange={e => setNewFieldType(e.target.value)} style={{ border: `1.5px solid ${C.border}`, background: C.card, padding: "7px 10px", fontFamily: fonts.sans, fontSize: 12, color: C.text, outline: "none" }}>
+              <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <input type="text" value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder={newFieldType === "nearest" ? "e.g. Nearest Gym" : "e.g. Has bathtub"} style={{ ...s.textInput, flex: 1, minWidth: 120 }} />
+                <select value={newFieldType} onChange={e => { setNewFieldType(e.target.value); setNewNearestCategory(""); }} style={{ border: `1.5px solid ${C.border}`, background: C.card, padding: "7px 10px", fontFamily: fonts.sans, fontSize: 12, color: C.text, outline: "none" }}>
                   {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
-                <button onClick={handleAddField} style={{ ...s.btn(true), whiteSpace: "nowrap", padding: "7px 16px" }}>Add</button>
+                {newFieldType === "nearest" && (
+                  <select value={newNearestCategory} onChange={e => setNewNearestCategory(e.target.value)} style={{ border: `1.5px solid ${C.border}`, background: C.card, padding: "7px 10px", fontFamily: fonts.sans, fontSize: 12, color: C.text, outline: "none" }}>
+                    <option value="">Pick category…</option>
+                    {(landmarkCategories || []).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                )}
+                <button onClick={handleAddField} disabled={newFieldType === "nearest" && !newNearestCategory} style={{ ...s.btn(true), whiteSpace: "nowrap", padding: "7px 16px", opacity: (newFieldType === "nearest" && !newNearestCategory) ? 0.5 : 1 }}>Add</button>
               </div>
             )}
 
@@ -1834,7 +2375,7 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpda
                         style={{ fontFamily: fonts.serif, fontSize: 14, color: C.text, cursor: "text", borderBottom: `1px dashed ${C.borderLight}` }}
                       >{f.name}</span>
                     )}
-                    <span style={{ fontSize: 9, fontFamily: fonts.sans, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.1em", marginLeft: 8 }}>{FIELD_TYPES.find(t => t.value === f.field_type)?.label || f.field_type}</span>
+                    <span style={{ fontSize: 9, fontFamily: fonts.sans, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.1em", marginLeft: 8 }}>{isNearestField(f) ? `Nearest · ${nearestCategory(f) || "Landmark"}` : (FIELD_TYPES.find(t => t.value === f.field_type)?.label || f.field_type)}</span>
                   </div>
                   <button onClick={async () => { await deleteCustomField(f.id); onFieldDeleted(f.id); }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 16, padding: "0 4px", flexShrink: 0 }}>×</button>
                 </div>
@@ -1938,6 +2479,7 @@ function SortFilterBar({ customFields, sortBy, onSort, filters, onFilter, mobile
 export default function GaffTracker() {
   const mobile = useIsMobile();
   const { user } = useAuth();
+  const routeLocation = useLocation();
 
   const [properties, setProperties] = useState([]);
   const [customFields, setCustomFields] = useState([]);
@@ -1950,6 +2492,9 @@ export default function GaffTracker() {
   const [sortBy, setSortBy] = useState("date_desc");
   const [filters, setFilters] = useState({});
   const [workplaceAddress, setWorkplaceAddress] = useState(getWorkplaceAddress(user));
+  const [costPerMile, setCostPerMile] = useState(() => getCostPerMile(user));
+  const [landmarks, setLandmarks] = useState(() => getLandmarks(user));
+  const [landmarkCategories, setLandmarkCategories] = useState(() => getLandmarkCategories(user));
   const [displayCurrency, setDisplayCurrencyState] = useState(getDisplayCurrency);
   const [rates, setRates] = useState(null);
 
@@ -1967,11 +2512,14 @@ export default function GaffTracker() {
   useEffect(() => { fetchRates().then(setRates); }, []);
 
   useEffect(() => {
-    if (user) setWorkplaceAddress(getWorkplaceAddress(user));
+    if (user) {
+      setWorkplaceAddress(getWorkplaceAddress(user));
+      setCostPerMile(getCostPerMile(user));
+      setLandmarks(getLandmarks(user));
+      setLandmarkCategories(getLandmarkCategories(user));
+    }
   }, [user]);
 
-  // Eagerly load Maps SDK so geocoding is instant when user first saves a property
-  useEffect(() => { if (GMAPS_KEY) loadMapsSDK().catch(() => {}); }, []);
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
@@ -1981,6 +2529,20 @@ export default function GaffTracker() {
       setLoading(false);
     });
   }, [user]);
+
+  // Auto-open edit dialog when navigated from Map view
+  useEffect(() => {
+    const editId = routeLocation.state?.editPropertyId;
+    if (editId && properties.length > 0 && !loading) {
+      const prop = properties.find(p => p.id === editId);
+      if (prop) {
+        setEditingProperty(prop);
+        setDialogOpen(true);
+        // Clear the state so it doesn't re-trigger
+        window.history.replaceState({}, "");
+      }
+    }
+  }, [properties, loading, routeLocation.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refresh = async () => {
     const { data } = await loadProperties();
@@ -2121,6 +2683,9 @@ export default function GaffTracker() {
         onFieldUpdated={updated => setCustomFields(prev => prev.map(f => f.id === updated.id ? updated : f))}
         workplaceAddress={workplaceAddress}
         onWorkplaceChange={setWorkplaceAddress}
+        costPerMile={costPerMile}
+        onCostPerMileChange={setCostPerMile}
+        landmarkCategories={landmarkCategories}
         mobile={mobile}
         open={settingsOpen}
         onToggle={() => setSettingsOpen(v => !v)}
@@ -2157,6 +2722,8 @@ export default function GaffTracker() {
               property={p}
               customFields={customFields}
               workplaceAddress={workplaceAddress}
+              landmarks={landmarks}
+              costPerMile={costPerMile}
               onEdit={prop => { setEditingProperty(prop); setDialogOpen(true); }}
               onDelete={handleDelete}
               onMarkSold={handleMarkSold}
@@ -2193,6 +2760,8 @@ export default function GaffTracker() {
           userId={user?.id}
           rates={rates}
           workplaceAddress={workplaceAddress}
+          costPerMile={costPerMile}
+          landmarks={landmarks}
           onSave={() => { setDialogOpen(false); refresh(); }}
           onClose={() => setDialogOpen(false)}
           onOpenSettings={() => { setDialogOpen(false); setSettingsOpen(true); }}

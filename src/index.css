@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Fix Tailwind base reset breaking Leaflet tile images */
+.leaflet-container img {
+  max-width: none;
+  display: inline;
+}
+
+/* Dim map tiles so pins stand out */
+.leaflet-tile-pane {
+  filter: saturate(0.6) brightness(1.02);
+}
+
 @layer base {
   :root {
     /* Light theme */
