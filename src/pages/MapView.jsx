@@ -872,7 +872,7 @@ export default function MapView() {
 
     // Landmark markers (respect category visibility)
     landmarks.forEach(l => {
-      if (l.category && !visibleCategories[l.category]) return;
+      if (l.category && visibleCategories[l.category] === false) return;
       const coord = landmarkCoords[l.id];
       if (!coord) return;
       const lSize = 36, lR = 18, lH = 48;
