@@ -511,25 +511,45 @@ export default function Sandbox() {
               )}
             </div>
 
-            {/* ── TABS ── */}
-            <div className="flex gap-1 mb-6 flex-wrap items-center border-b border-border pb-4">
-              {[
-                { key: "longTerm", label: "Long-term: Wealth" },
-                { key: "shortTerm", label: "Short-term: Should I buy?" },
-              ].map((t) => (
-                <button
-                  key={t.key}
-                  onClick={() => setActiveTab(t.key)}
-                  className={cn(
-                    "px-[18px] py-[9px] border text-[11px] font-semibold cursor-pointer tracking-[0.02em] transition-all duration-150 rounded-none",
-                    activeTab === t.key
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border bg-transparent text-muted-foreground hover:border-brand/40"
-                  )}
-                >
-                  {t.label}
-                </button>
-              ))}
+            {/* ── TABS + INFLATION CONTROLS ── */}
+            <div className={cn(
+              "flex gap-3 mb-6 flex-wrap items-center border-b border-border pb-4",
+              mobile ? "flex-col items-start" : ""
+            )}>
+              <div className="flex gap-1 flex-wrap items-center">
+                {[
+                  { key: "longTerm", label: "Long-term: Wealth" },
+                  { key: "shortTerm", label: "Short-term: Should I buy?" },
+                ].map((t) => (
+                  <button
+                    key={t.key}
+                    onClick={() => setActiveTab(t.key)}
+                    className={cn(
+                      "px-[18px] py-[9px] border text-[11px] font-semibold cursor-pointer tracking-[0.02em] transition-all duration-150 rounded-none",
+                      activeTab === t.key
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border bg-transparent text-muted-foreground hover:border-brand/40"
+                    )}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Inflation controls — inline with tabs */}
+              {activeTab === "longTerm" && (
+                <div className="flex items-center gap-4 ml-auto">
+                  <div className="w-[90px]">
+                    <Field label="Inflation" value={inflationRate} onChange={setInflationRate} suffix="%" tip="Bank of England target is 2%. Over 25 years at 2%, the discount is ~40%." />
+                  </div>
+                  <Toggle
+                    label="Today's money"
+                    value={inflationAdjusted}
+                    onChange={setInflationAdjusted}
+                    tip="Show values in today's purchasing power."
+                  />
+                </div>
+              )}
             </div>
 
             {/* ── SHORT-TERM TAB ── */}
@@ -593,36 +613,27 @@ export default function Sandbox() {
                   the portfolio built by investing the deposit and any monthly savings.
                 </p>
 
-                {/* Inflation controls — compact inline */}
-                <div className="flex flex-wrap gap-5 items-end mb-6 px-4 py-3.5 bg-card border border-border">
-                  <div className="w-[155px]">
-                    <Field label="Assumed Inflation" value={inflationRate} onChange={setInflationRate} suffix="% p.a." tip="Bank of England target is 2%. Over 25 years at 2%, the discount is ~40%." />
-                  </div>
-                  <div>
-                    <Toggle
-                      label="Show in today's money (inflation-adjusted)"
-                      value={inflationAdjusted}
-                      onChange={setInflationAdjusted}
-                      tip="Inflation-adjusted values show what your future wealth would be worth in today's purchasing power."
-                    />
-                  </div>
+                {/* Chart + Narrative side by side */}
+                <div className={cn(
+                  "grid gap-8 items-start",
+                  mobile ? "grid-cols-1" : "grid-cols-[1.4fr_1fr]"
+                )}>
+                  <InteractiveChart
+                    mobile={mobile}
+                    data={inflationAdjusted ? inflationAdjustedWD : results.wD}
+                    keys={["buyWealth", "rentWealth"]}
+                    colors={["var(--success)", "var(--destructive)"]}
+                    labels={["Buy (net equity)", "Rent + invest"]}
+                    title="Wealth Over Time"
+                    markers={wealthMarkers}
+                    inflationAdjusted={inflationAdjusted}
+                  />
+
+                  <WealthNarrative
+                    wD={inflationAdjusted ? inflationAdjustedWD : results.wD}
+                    config={runConfig}
+                  />
                 </div>
-
-                <InteractiveChart
-                  mobile={mobile}
-                  data={inflationAdjusted ? inflationAdjustedWD : results.wD}
-                  keys={["buyWealth", "rentWealth"]}
-                  colors={["var(--success)", "var(--destructive)"]}
-                  labels={["Buy (net equity)", "Rent + invest"]}
-                  title="Wealth Over Time"
-                  markers={wealthMarkers}
-                  inflationAdjusted={inflationAdjusted}
-                />
-
-                <WealthNarrative
-                  wD={inflationAdjusted ? inflationAdjustedWD : results.wD}
-                  config={runConfig}
-                />
               </div>
             )}
 
