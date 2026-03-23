@@ -49,7 +49,7 @@ export default function App() {
   };
 
   const currentPath = location.pathname;
-  const isFullWidth = currentPath === "/map" || currentPath === "/compare";
+  const isFullWidth = currentPath === "/map" || currentPath === "/compare" || currentPath === "/sandbox";
 
   const avatarUrl = auth.user ? getAvatarUrl(auth.user) : null;
   const avatarInitial = auth.user
