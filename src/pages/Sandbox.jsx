@@ -371,7 +371,7 @@ export default function Sandbox() {
 
         {/* ══ STICKY ASSUMPTIONS BAR ══ */}
         <div className={cn(
-          "sticky z-40 bg-background/95 backdrop-blur-sm border-b border-border -mx-4 sm:-mx-8 px-4 sm:px-8 mb-6 transition-all",
+          "sticky z-40 bg-card border border-border shadow-md -mx-4 sm:-mx-8 px-4 sm:px-8 mb-6",
           mobile ? "top-[6.5rem]" : "top-[6.5rem]"
         )}>
           <div className="max-w-7xl mx-auto py-3">
