@@ -256,208 +256,174 @@ export default function Sandbox() {
 
   const hasSelections = selectedBuy && selectedFlat;
 
-  return (
-    <div className="px-4 sm:px-8 py-6">
-      <div className="max-w-7xl mx-auto">
-
-        {/* ══ PAGE HEADER ══ */}
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="font-serif font-normal text-foreground text-[22px] m-0">Rent vs Buy</h2>
-          <div className="flex items-center gap-2">
-            {results && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={exportCSV}
-                className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-                CSV
-              </Button>
-            )}
-            <button
-              onClick={() => setConfigOpen(!configOpen)}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-2 border text-[10px] font-semibold uppercase tracking-wider transition-all duration-150",
-                configOpen
-                  ? "border-brand text-brand bg-brand/5"
-                  : "border-border text-muted-foreground hover:border-brand/40"
-              )}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-              {configOpen ? "Hide" : "Configure"}
-              {!configOpen && hasSelections && (
-                <span className="w-1.5 h-1.5 rounded-full bg-success" />
-              )}
-            </button>
-          </div>
+  /* ── Mobile: single-column with collapsible sidebar ── */
+  if (mobile) {
+    return (
+      <div className="px-4 py-4">
+        {/* Collapsible config */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-serif font-normal text-foreground text-[20px] m-0">Rent vs Buy</h2>
+          <button onClick={() => setConfigOpen(!configOpen)} className="flex items-center gap-1.5 px-3 py-2 border border-border text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {configOpen ? "Hide controls" : "Controls"}
+          </button>
         </div>
 
-        {/* ══ SELECTED SCENARIOS STRIP (when config collapsed) ══ */}
-        {!configOpen && hasSelections && (
-          <div className="flex gap-3 mb-4 flex-wrap px-4 py-3 bg-card border border-border text-xs text-muted-foreground animate-fade-in">
-            <span>
-              <strong className="text-foreground">{selectedBuy?.config?.propertyName || selectedBuy?.name}</strong>
-              {" vs "}
-              <strong className="text-foreground">{selectedFlat?.name}</strong>
-              {" ("}
-              {fmt(runConfig?.monthlyRent || monthlyRent)}/mo)
-            </span>
-            <button
-              onClick={() => setConfigOpen(true)}
-              className="ml-auto text-brand hover:underline text-[10px] font-semibold uppercase tracking-wider"
-            >
-              Change scenarios
-            </button>
-          </div>
-        )}
-
-        {/* ══ CONFIGURATION PANEL (scenarios only) ══ */}
         {configOpen && (
-          <div className="mb-6 border border-border bg-card animate-fade-in">
-            <div className={cn(
-              "grid gap-6 p-5",
-              mobile ? "grid-cols-1" : "grid-cols-2"
-            )}>
-              {/* Buy Scenarios */}
-              <div>
-                <div className="text-[9px] font-bold uppercase tracking-[0.22em] text-brand border-b border-border pb-2 mb-3">
-                  Buy Scenario
+          <div className="mb-4 space-y-5 animate-fade-in">
+            {/* Scenario pickers */}
+            <div>
+              <div className="text-[9px] font-bold uppercase tracking-[0.22em] text-brand border-b border-border pb-2 mb-3">Buy Scenario</div>
+              {loading ? <div className="text-sm text-muted-foreground font-serif">Loading...</div>
+                : buyScenarios.length === 0 ? <div className="px-4 py-3 border border-dashed border-border text-xs font-serif text-muted-foreground italic">No saved scenarios.</div>
+                : <div className="flex flex-col gap-1.5">{buyScenarios.map((s) => <ScenarioTile key={s.id} scenario={s} selected={selectedBuy} onSelect={setSelectedBuy} />)}</div>}
+            </div>
+            <div>
+              <div className="text-[9px] font-bold uppercase tracking-[0.22em] text-brand border-b border-border pb-2 mb-3">Flat to Rent</div>
+              {loading ? <div className="text-sm text-muted-foreground font-serif">Loading...</div>
+                : flats.length === 0 ? <div className="px-4 py-3 border border-dashed border-border text-xs font-serif text-muted-foreground italic">No saved flats.</div>
+                : <div className="flex flex-col gap-1.5">{flats.map((f) => <FlatTile key={f.id} flat={f} selected={selectedFlat} onSelect={handleSelectFlat} />)}</div>}
+            </div>
+            {/* Assumptions */}
+            <div>
+              <div className="text-[9px] font-bold uppercase tracking-[0.22em] text-brand border-b border-border pb-2 mb-3">Assumptions</div>
+              <div className="space-y-3">
+                <div><label className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center mb-1.5">HP Growth <Tip text="Annual property value increase." /></label><PresetSelector presets={hpPresets} value={houseGrowth} onChange={setHouseGrowth} /></div>
+                <div><label className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center mb-1.5">Invest Return <Tip text="What your deposit would earn invested." /></label><PresetSelector presets={invPresets} value={investReturn} onChange={setInvestReturn} /></div>
+                <div className="grid grid-cols-3 gap-3">
+                  <Field label="Rent" prefix="£" value={monthlyRent} onChange={setMonthlyRent} fieldKey="monthlyRent" />
+                  <Field label="Rent Infl." suffix="%" value={rentInflation} onChange={setRentInflation} fieldKey="rentInflation" />
+                  <Field label="Horizon" suffix="yr" value={horizonYears} onChange={setHorizonYears} fieldKey="horizonYears" />
                 </div>
-                {loading && <div className="text-sm text-muted-foreground font-serif">Loading...</div>}
-                {!loading && buyScenarios.length === 0 && (
-                  <div className="px-4 py-3 border border-dashed border-border text-xs font-serif text-muted-foreground italic">
-                    No saved scenarios. Configure and save one in Buy Scenario.
-                  </div>
-                )}
-                {!loading && buyScenarios.length > 0 && (
-                  <div className="flex flex-col gap-1.5 max-h-[200px] overflow-y-auto">
-                    {buyScenarios.map((s) => (
-                      <ScenarioTile key={s.id} scenario={s} selected={selectedBuy} onSelect={setSelectedBuy} />
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Flat to Rent */}
-              <div>
-                <div className="text-[9px] font-bold uppercase tracking-[0.22em] text-brand border-b border-border pb-2 mb-3">
-                  Flat to Rent
-                </div>
-                {loading && <div className="text-sm text-muted-foreground font-serif">Loading...</div>}
-                {!loading && flats.length === 0 && (
-                  <div className="px-4 py-3 border border-dashed border-border text-xs font-serif text-muted-foreground italic">
-                    No saved flats. Add one in Gaff Tracker.
-                  </div>
-                )}
-                {!loading && flats.length > 0 && (
-                  <div className="flex flex-col gap-1.5 max-h-[200px] overflow-y-auto">
-                    {flats.map((f) => (
-                      <FlatTile key={f.id} flat={f} selected={selectedFlat} onSelect={handleSelectFlat} />
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
           </div>
         )}
 
-        {/* ══ STICKY ASSUMPTIONS BAR ══ */}
-        <div className={cn(
-          "sticky z-40 bg-card border border-border shadow-md -mx-4 sm:-mx-8 px-4 sm:px-8 mb-6",
-          mobile ? "top-[6.5rem]" : "top-[6.5rem]"
-        )}>
-          <div className="max-w-7xl mx-auto py-3">
-            <div className={cn(
-              "flex items-end gap-x-6 gap-y-3 flex-wrap",
-            )}>
-              <div className="flex items-center gap-1.5 mr-auto sm:mr-0">
-                <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-brand">Assumptions</span>
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className={cn(
-                  "flex items-end gap-x-5 gap-y-3 flex-wrap",
-                )}>
-                  {/* House Price Growth */}
-                  <div>
-                    <label className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center mb-1.5">
-                      HP Growth <Tip text="Annual property value increase. UK long-term avg ~3.5%." />
-                    </label>
-                    <PresetSelector presets={hpPresets} value={houseGrowth} onChange={setHouseGrowth} />
-                  </div>
-
-                  {/* Investment Return */}
-                  <div>
-                    <label className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center mb-1.5">
-                      Invest Return <Tip text="Opportunity cost — what your deposit would earn invested instead." />
-                    </label>
-                    <PresetSelector presets={invPresets} value={investReturn} onChange={setInvestReturn} />
-                  </div>
-
-                  {/* Compact numeric fields */}
-                  <div className="w-[100px]">
-                    <Field label="Rent" prefix="£" value={monthlyRent} onChange={setMonthlyRent} tip="Monthly rent. Auto-filled from Gaff Tracker." fieldKey="monthlyRent" />
-                  </div>
-                  <div className="w-[80px]">
-                    <Field label="Rent Infl." suffix="%" value={rentInflation} onChange={setRentInflation} tip="Annual rent increase." fieldKey="rentInflation" />
-                  </div>
-                  <div className="w-[70px]">
-                    <Field label="Horizon" suffix="yr" value={horizonYears} onChange={setHorizonYears} tip="3–5 years short-term, 15–25 long-term." fieldKey="horizonYears" />
-                  </div>
-                </div>
-              </div>
-            </div>
+        {/* Mobile results (same as before, single column) */}
+        {!results ? (
+          <div className="flex items-center justify-center min-h-[300px] border border-dashed border-border flex-col gap-3 p-8">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-muted-foreground/30"><path d="M3 3v18h18" /><path d="m7 16 4-4 4 4 4-4" /></svg>
+            <p className="font-serif text-muted-foreground italic text-center m-0">Select a buy scenario and a flat to see the analysis.</p>
           </div>
+        ) : (
+          <MobileResults
+            results={results} runConfig={runConfig} activeTab={activeTab} setActiveTab={setActiveTab}
+            fBDisplay={fBDisplay} fRDisplay={fRDisplay} inflationAdjusted={inflationAdjusted}
+            inflationRate={inflationRate} setInflationRate={setInflationRate}
+            setInflationAdjusted={setInflationAdjusted} investReturn={investReturn}
+            horizonYears={horizonYears} inflationAdjustedWD={inflationAdjustedWD}
+            wealthMarkers={wealthMarkers} exportCSV={exportCSV}
+          />
+        )}
+        <div className="mt-10 border-t-2 border-foreground pt-4 flex justify-between">
+          <span className="text-[10px] text-muted-foreground tracking-[0.15em] uppercase font-semibold">Personal Finance Suite</span>
+          <span className="text-[10px] text-muted-foreground/50 tracking-[0.15em] uppercase">Rent vs Buy</span>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Desktop: sidebar + main dashboard ── */
+  return (
+    <div className="flex h-[calc(100vh-6.5rem)]">
+
+      {/* ══ LEFT SIDEBAR ══ */}
+      <aside className="w-[280px] shrink-0 border-r border-border bg-card overflow-y-auto px-5 py-5">
+        <h2 className="font-serif font-normal text-foreground text-[20px] mb-5">Rent vs Buy</h2>
+
+        {/* Scenario pickers */}
+        <div className="mb-5">
+          <div className="text-[9px] font-bold uppercase tracking-[0.22em] text-brand border-b border-border pb-2 mb-3">
+            Buy Scenario
+          </div>
+          {loading && <div className="text-sm text-muted-foreground font-serif">Loading...</div>}
+          {!loading && buyScenarios.length === 0 && (
+            <div className="px-3 py-2.5 border border-dashed border-border text-xs font-serif text-muted-foreground italic">
+              No saved scenarios.
+            </div>
+          )}
+          {!loading && buyScenarios.length > 0 && (
+            <div className="flex flex-col gap-1.5 max-h-[160px] overflow-y-auto">
+              {buyScenarios.map((s) => (
+                <ScenarioTile key={s.id} scenario={s} selected={selectedBuy} onSelect={setSelectedBuy} />
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* ══ EMPTY STATE ══ */}
-        {!results && (
-          <div className="flex items-center justify-center min-h-[400px] border border-dashed border-border flex-col gap-4 p-10">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/30">
+        <div className="mb-6">
+          <div className="text-[9px] font-bold uppercase tracking-[0.22em] text-brand border-b border-border pb-2 mb-3">
+            Flat to Rent
+          </div>
+          {loading && <div className="text-sm text-muted-foreground font-serif">Loading...</div>}
+          {!loading && flats.length === 0 && (
+            <div className="px-3 py-2.5 border border-dashed border-border text-xs font-serif text-muted-foreground italic">
+              No saved flats.
+            </div>
+          )}
+          {!loading && flats.length > 0 && (
+            <div className="flex flex-col gap-1.5 max-h-[160px] overflow-y-auto">
+              {flats.map((f) => (
+                <FlatTile key={f.id} flat={f} selected={selectedFlat} onSelect={handleSelectFlat} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Assumptions */}
+        <div className="text-[9px] font-bold uppercase tracking-[0.22em] text-brand border-b border-border pb-2 mb-4">
+          Assumptions
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center mb-1.5">
+              House Price Growth <Tip text="Annual property value increase. UK long-term avg ~3.5%." />
+            </label>
+            <PresetSelector presets={hpPresets} value={houseGrowth} onChange={setHouseGrowth} />
+          </div>
+
+          <div>
+            <label className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center mb-1.5">
+              Investment Return <Tip text="Opportunity cost — what your deposit would earn invested instead." />
+            </label>
+            <PresetSelector presets={invPresets} value={investReturn} onChange={setInvestReturn} />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Rent" prefix="£" value={monthlyRent} onChange={setMonthlyRent} tip="Monthly rent." fieldKey="monthlyRent" />
+            <Field label="Rent Infl." suffix="%" value={rentInflation} onChange={setRentInflation} tip="Annual rent increase." fieldKey="rentInflation" />
+            <Field label="Horizon" suffix="yr" value={horizonYears} onChange={setHorizonYears} tip="3–5 short, 15–25 long." fieldKey="horizonYears" />
+          </div>
+        </div>
+      </aside>
+
+      {/* ══ MAIN CONTENT ══ */}
+      <main className="flex-1 overflow-y-auto px-6 py-5">
+        {!results ? (
+          <div className="flex items-center justify-center h-full border border-dashed border-border flex-col gap-4 p-10">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-muted-foreground/30">
               <path d="M3 3v18h18" /><path d="m7 16 4-4 4 4 4-4" />
             </svg>
             <p className="font-serif text-muted-foreground italic text-center m-0 text-lg">
-              Select a buy scenario and a flat above to see the analysis.
+              Select a buy scenario and a flat to see the analysis.
             </p>
-            {!configOpen && (
-              <Button variant="outline" size="sm" onClick={() => setConfigOpen(true)}>
-                Open Configuration
-              </Button>
-            )}
           </div>
-        )}
-
-        {/* ══ RESULTS ══ */}
-        {results && (
+        ) : (
           <>
             {/* ── VERDICT HERO ── */}
             {activeTab === "longTerm" && (() => {
               const d = fBDisplay - fRDisplay, bw = d > 0;
               return (
                 <div className={cn(
-                  "border-l-4 px-6 py-5 mb-8",
-                  bw
-                    ? "border-l-green-600 bg-green-50 dark:bg-green-950/20"
-                    : "border-l-red-500 bg-red-50 dark:bg-red-950/20"
+                  "border-l-4 px-5 py-4 mb-6",
+                  bw ? "border-l-green-600 bg-green-50 dark:bg-green-950/20" : "border-l-red-500 bg-red-50 dark:bg-red-950/20"
                 )}>
-                  <div className={cn(
-                    "text-2xl sm:text-3xl font-serif font-normal mb-2",
-                    bw ? "text-green-600" : "text-red-500"
-                  )}>
+                  <div className={cn("text-xl sm:text-2xl font-serif font-normal mb-1", bw ? "text-green-600" : "text-red-500")}>
                     {bw ? "Buying" : "Renting + investing"} builds more wealth over {horizonYears} years
-                    {inflationAdjusted && (
-                      <span className="text-sm text-brand ml-2.5">(in today's £)</span>
-                    )}
+                    {inflationAdjusted && <span className="text-sm text-brand ml-2">(in today's £)</span>}
                   </div>
-                  <p className="text-[14px] font-serif text-muted-foreground leading-relaxed m-0">
+                  <p className="text-[13px] font-serif text-muted-foreground leading-relaxed m-0">
                     {bw
                       ? `Buying leaves you ${fmt(Math.abs(d))} wealthier${inflationAdjusted ? " in today's purchasing power" : ""}.${results.wBE ? ` Crossover at year ${(results.wBE / 12).toFixed(1)}.` : ""}`
                       : `Renting and investing at ${investReturn}% leaves you ${fmt(Math.abs(d))} ahead${inflationAdjusted ? " in today's purchasing power" : ""}.${results.wBE ? ` Buying catches up at year ${(results.wBE / 12).toFixed(1)}.` : " Buying doesn't catch up."}`}
@@ -468,20 +434,13 @@ export default function Sandbox() {
 
             {activeTab === "shortTerm" && (
               <div className={cn(
-                "border-l-4 px-6 py-5 mb-8",
-                results.costBE != null
-                  ? "border-l-green-600 bg-green-50 dark:bg-green-950/20"
-                  : "border-l-red-500 bg-red-50 dark:bg-red-950/20"
+                "border-l-4 px-5 py-4 mb-6",
+                results.costBE != null ? "border-l-green-600 bg-green-50 dark:bg-green-950/20" : "border-l-red-500 bg-red-50 dark:bg-red-950/20"
               )}>
-                <div className={cn(
-                  "text-2xl sm:text-3xl font-serif font-normal mb-2",
-                  results.costBE != null ? "text-green-600" : "text-red-500"
-                )}>
-                  {results.costBE != null
-                    ? `Buying breaks even after ${(results.costBE / 12).toFixed(1)} years`
-                    : `Renting costs less over ${horizonYears} years`}
+                <div className={cn("text-xl sm:text-2xl font-serif font-normal mb-1", results.costBE != null ? "text-green-600" : "text-red-500")}>
+                  {results.costBE != null ? `Buying breaks even after ${(results.costBE / 12).toFixed(1)} years` : `Renting costs less over ${horizonYears} years`}
                 </div>
-                <p className="text-[14px] font-serif text-muted-foreground leading-relaxed m-0">
+                <p className="text-[13px] font-serif text-muted-foreground leading-relaxed m-0">
                   {results.costBE != null
                     ? `Sell before year ${(results.costBE / 12).toFixed(1)} and you'll have spent more buying than renting.`
                     : `Over ${horizonYears} years, total buying costs exceed cumulative rent.`}
@@ -490,10 +449,7 @@ export default function Sandbox() {
             )}
 
             {/* ── KEY STATS ── */}
-            <div className={cn(
-              "grid gap-5 mb-8",
-              mobile ? "grid-cols-2" : "grid-cols-4"
-            )}>
+            <div className="grid grid-cols-4 gap-4 mb-6">
               {activeTab === "longTerm" ? (
                 <>
                   <Stat label="Buy: Net Equity" value={fmt(fBDisplay)} sub={inflationAdjusted ? "In today's purchasing power" : "After mortgage & selling costs"} />
@@ -511,12 +467,9 @@ export default function Sandbox() {
               )}
             </div>
 
-            {/* ── TABS + INFLATION CONTROLS ── */}
-            <div className={cn(
-              "flex gap-3 mb-6 flex-wrap items-center border-b border-border pb-4",
-              mobile ? "flex-col items-start" : ""
-            )}>
-              <div className="flex gap-1 flex-wrap items-center">
+            {/* ── TABS + INFLATION ── */}
+            <div className="flex gap-3 mb-5 flex-wrap items-center border-b border-border pb-3">
+              <div className="flex gap-1 items-center">
                 {[
                   { key: "longTerm", label: "Long-term: Wealth" },
                   { key: "shortTerm", label: "Short-term: Should I buy?" },
@@ -535,35 +488,29 @@ export default function Sandbox() {
                   </button>
                 ))}
               </div>
-
-              {/* Inflation controls — inline with tabs */}
               {activeTab === "longTerm" && (
                 <div className="flex items-center gap-4 ml-auto">
                   <div className="w-[90px]">
-                    <Field label="Inflation" value={inflationRate} onChange={setInflationRate} suffix="%" tip="Bank of England target is 2%. Over 25 years at 2%, the discount is ~40%." />
+                    <Field label="Inflation" value={inflationRate} onChange={setInflationRate} suffix="%" tip="Bank of England target is 2%." />
                   </div>
-                  <Toggle
-                    label="Today's money"
-                    value={inflationAdjusted}
-                    onChange={setInflationAdjusted}
-                    tip="Show values in today's purchasing power."
-                  />
+                  <Toggle label="Today's money" value={inflationAdjusted} onChange={setInflationAdjusted} tip="Show values in today's purchasing power." />
                 </div>
+              )}
+              {results && (
+                <Button variant="outline" size="sm" onClick={exportCSV} className={cn("flex items-center gap-1.5 text-[10px] uppercase tracking-wider", activeTab !== "longTerm" && "ml-auto")}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                  CSV
+                </Button>
               )}
             </div>
 
             {/* ── SHORT-TERM TAB ── */}
             {activeTab === "shortTerm" && (
               <div>
-                <p className="text-[13px] font-serif text-muted-foreground leading-relaxed mb-6 italic max-w-3xl">
-                  This tab tracks pure cash flow — how much money leaves your pocket each month and cumulatively.
-                  It doesn't account for equity or investment gains, just spending. Most useful for 1–5 year affordability.
-                </p>
-
-                <div className={cn("grid gap-8", mobile ? "grid-cols-1" : "grid-cols-2")}>
+                <div className="grid grid-cols-2 gap-6">
                   {results.mC.length > 1 && (
                     <InteractiveChart
-                      mobile={mobile}
+                      mobile={false}
                       data={results.mC.map((d) => ({ month: d.year * 12, buy: d.buy, rent: d.rent }))}
                       keys={["buy", "rent"]}
                       colors={["var(--success)", "var(--destructive)"]}
@@ -573,7 +520,7 @@ export default function Sandbox() {
                     />
                   )}
                   <InteractiveChart
-                    mobile={mobile}
+                    mobile={false}
                     data={results.cD}
                     keys={["buyCost", "rentCost"]}
                     colors={["var(--success)", "var(--destructive)"]}
@@ -583,9 +530,8 @@ export default function Sandbox() {
                     annotation={results.costBE ? `Break-even: Yr ${(results.costBE / 12).toFixed(1)}` : undefined}
                   />
                 </div>
-
                 <SensitivityTable
-                  mobile={mobile}
+                  mobile={false}
                   propertyValue={runConfig.propertyValue}
                   totalUpfront={results.totalUpfront}
                   loanAmount={results.loanAmount}
@@ -607,19 +553,10 @@ export default function Sandbox() {
             {/* ── LONG-TERM TAB ── */}
             {activeTab === "longTerm" && (
               <div>
-                <p className="text-[13px] font-serif text-muted-foreground leading-relaxed mb-6 italic max-w-3xl">
-                  This tab tracks your total financial position — not just what you spend, but what you end up with.
-                  For buyers, that's property equity minus selling costs plus any invested surplus. For renters, it's
-                  the portfolio built by investing the deposit and any monthly savings.
-                </p>
-
                 {/* Chart + Narrative side by side */}
-                <div className={cn(
-                  "grid gap-8 items-start",
-                  mobile ? "grid-cols-1" : "grid-cols-[1.4fr_1fr]"
-                )}>
+                <div className="grid grid-cols-[1.3fr_1fr] gap-6 items-start">
                   <InteractiveChart
-                    mobile={mobile}
+                    mobile={false}
                     data={inflationAdjusted ? inflationAdjustedWD : results.wD}
                     keys={["buyWealth", "rentWealth"]}
                     colors={["var(--success)", "var(--destructive)"]}
@@ -628,7 +565,6 @@ export default function Sandbox() {
                     markers={wealthMarkers}
                     inflationAdjusted={inflationAdjusted}
                   />
-
                   <WealthNarrative
                     wD={inflationAdjusted ? inflationAdjustedWD : results.wD}
                     config={runConfig}
@@ -641,13 +577,96 @@ export default function Sandbox() {
           </>
         )}
 
-        {/* ── Footer ── */}
-        <div className="mt-12 border-t-2 border-foreground pt-4 flex justify-between">
+        {/* Footer */}
+        <div className="mt-10 border-t-2 border-foreground pt-4 flex justify-between">
           <span className="text-[10px] text-muted-foreground tracking-[0.15em] uppercase font-semibold">Personal Finance Suite</span>
           <span className="text-[10px] text-muted-foreground/50 tracking-[0.15em] uppercase">Rent vs Buy</span>
         </div>
-
-      </div>
+      </main>
     </div>
+  );
+}
+
+/* ── Mobile results (extracted to keep main component readable) ── */
+function MobileResults({
+  results, runConfig, activeTab, setActiveTab, fBDisplay, fRDisplay,
+  inflationAdjusted, inflationRate, setInflationRate, setInflationAdjusted,
+  investReturn, horizonYears, inflationAdjustedWD, wealthMarkers, exportCSV,
+}) {
+  const d = fBDisplay - fRDisplay, bw = d > 0;
+  return (
+    <>
+      {/* Verdict */}
+      {activeTab === "longTerm" && (
+        <div className={cn("border-l-4 px-4 py-3 mb-5", bw ? "border-l-green-600 bg-green-50 dark:bg-green-950/20" : "border-l-red-500 bg-red-50 dark:bg-red-950/20")}>
+          <div className={cn("text-lg font-serif font-normal mb-1", bw ? "text-green-600" : "text-red-500")}>
+            {bw ? "Buying" : "Renting"} wins over {horizonYears} years
+          </div>
+          <p className="text-[12px] font-serif text-muted-foreground m-0">
+            {bw ? `${fmt(Math.abs(d))} wealthier buying` : `${fmt(Math.abs(d))} ahead renting`}
+            {results.wBE ? `. Crossover yr ${(results.wBE / 12).toFixed(1)}.` : ""}
+          </p>
+        </div>
+      )}
+      {activeTab === "shortTerm" && (
+        <div className={cn("border-l-4 px-4 py-3 mb-5", results.costBE != null ? "border-l-green-600 bg-green-50 dark:bg-green-950/20" : "border-l-red-500 bg-red-50 dark:bg-red-950/20")}>
+          <div className={cn("text-lg font-serif font-normal mb-1", results.costBE != null ? "text-green-600" : "text-red-500")}>
+            {results.costBE != null ? `Break-even: ${(results.costBE / 12).toFixed(1)} years` : `Renting costs less over ${horizonYears}yr`}
+          </div>
+        </div>
+      )}
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        {activeTab === "longTerm" ? (
+          <>
+            <Stat label="Buy: Net Equity" value={fmt(fBDisplay)} />
+            <Stat label="Rent: Portfolio" value={fmt(fRDisplay)} />
+            <Stat label="Break-Even" value={results.wBE != null ? `${(results.wBE / 12).toFixed(1)} yrs` : "N/A"} />
+            <Stat label="Difference" value={fmt(Math.abs(fBDisplay - fRDisplay))} accent />
+          </>
+        ) : (
+          <>
+            <Stat label="Break-Even" value={results.costBE != null ? `${(results.costBE / 12).toFixed(1)} yrs` : "N/A"} />
+            <Stat label="Buy (Yr 1)" value={fmt(Math.round(pmtCalc(results.loanAmount, runConfig.fixedRate, runConfig.mortgageTerm) + results.ongoingMonthly))} />
+            <Stat label="Rent (Yr 1)" value={fmt(runConfig.monthlyRent)} />
+            <Stat label="Difference" value={fmt(Math.abs(Math.round(pmtCalc(results.loanAmount, runConfig.fixedRate, runConfig.mortgageTerm) + results.ongoingMonthly) - runConfig.monthlyRent))} accent />
+          </>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-4">
+        {[{ key: "longTerm", label: "Wealth" }, { key: "shortTerm", label: "Costs" }].map((t) => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)} className={cn("px-4 py-2 border text-[11px] font-semibold", activeTab === t.key ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground")}>
+            {t.label}
+          </button>
+        ))}
+        <Button variant="outline" size="sm" onClick={exportCSV} className="ml-auto text-[10px]">CSV</Button>
+      </div>
+
+      {activeTab === "longTerm" && (
+        <>
+          <div className="flex items-center gap-3 mb-4 px-3 py-2 bg-card border border-border">
+            <div className="w-[80px]"><Field label="Inflation" value={inflationRate} onChange={setInflationRate} suffix="%" /></div>
+            <Toggle label="Today's £" value={inflationAdjusted} onChange={setInflationAdjusted} />
+          </div>
+          <InteractiveChart mobile={true} data={inflationAdjusted ? inflationAdjustedWD : results.wD} keys={["buyWealth", "rentWealth"]} colors={["var(--success)", "var(--destructive)"]} labels={["Buy", "Rent+invest"]} title="Wealth Over Time" markers={wealthMarkers} inflationAdjusted={inflationAdjusted} />
+          <WealthNarrative wD={inflationAdjusted ? inflationAdjustedWD : results.wD} config={runConfig} />
+        </>
+      )}
+
+      {activeTab === "shortTerm" && (
+        <>
+          {results.mC.length > 1 && (
+            <InteractiveChart mobile={true} data={results.mC.map((d) => ({ month: d.year * 12, buy: d.buy, rent: d.rent }))} keys={["buy", "rent"]} colors={["var(--success)", "var(--destructive)"]} labels={["Buy cost", "Rent"]} title="Monthly Outgoing" formatY={(v) => v >= 1000 ? `£${(v / 1000).toFixed(1)}k` : `£${v}`} />
+          )}
+          <InteractiveChart mobile={true} data={results.cD} keys={["buyCost", "rentCost"]} colors={["var(--success)", "var(--destructive)"]} labels={["Buy cost", "Rent"]} title="Cumulative Cost" breakEvenMonth={results.costBE} />
+          <SensitivityTable mobile={true} propertyValue={runConfig.propertyValue} totalUpfront={results.totalUpfront} loanAmount={results.loanAmount} fixedRate={runConfig.fixedRate} mortgageTerm={runConfig.mortgageTerm} fixedPeriod={runConfig.fixedPeriod} revertRate={runConfig.revertRate} monthlyRent={runConfig.monthlyRent} rentInflation={runConfig.rentInflation} ongoingMonthly={results.ongoingMonthly} houseGrowth={runConfig.houseGrowth} estateAgentPct={runConfig.estateAgentPct} sellingConveyancing={runConfig.sellingConveyancing} epcCost={runConfig.epcCost} />
+        </>
+      )}
+
+      <HowWeCalculate config={runConfig} results={results} inflationRate={inflationRate} inflationAdjusted={inflationAdjusted} />
+    </>
   );
 }
