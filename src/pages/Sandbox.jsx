@@ -302,7 +302,7 @@ export default function Sandbox() {
 
         {/* ══ SELECTED SCENARIOS STRIP (when config collapsed) ══ */}
         {!configOpen && hasSelections && (
-          <div className="flex gap-3 mb-6 flex-wrap px-4 py-3 bg-card border border-border text-xs text-muted-foreground animate-fade-in">
+          <div className="flex gap-3 mb-4 flex-wrap px-4 py-3 bg-card border border-border text-xs text-muted-foreground animate-fade-in">
             <span>
               <strong className="text-foreground">{selectedBuy?.config?.propertyName || selectedBuy?.name}</strong>
               {" vs "}
@@ -310,23 +310,21 @@ export default function Sandbox() {
               {" ("}
               {fmt(runConfig?.monthlyRent || monthlyRent)}/mo)
             </span>
-            <span className="text-border">|</span>
-            <span>Growth {houseGrowth}% · Invest {investReturn}% · {horizonYears}yr</span>
             <button
               onClick={() => setConfigOpen(true)}
               className="ml-auto text-brand hover:underline text-[10px] font-semibold uppercase tracking-wider"
             >
-              Edit
+              Change scenarios
             </button>
           </div>
         )}
 
-        {/* ══ CONFIGURATION PANEL ══ */}
+        {/* ══ CONFIGURATION PANEL (scenarios only) ══ */}
         {configOpen && (
-          <div className="mb-8 border border-border bg-card animate-fade-in">
+          <div className="mb-6 border border-border bg-card animate-fade-in">
             <div className={cn(
               "grid gap-6 p-5",
-              mobile ? "grid-cols-1" : "grid-cols-[1fr_1fr_1.2fr]"
+              mobile ? "grid-cols-1" : "grid-cols-2"
             )}>
               {/* Buy Scenarios */}
               <div>
@@ -367,35 +365,58 @@ export default function Sandbox() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
 
-              {/* Assumptions */}
-              <div>
-                <div className="text-[9px] font-bold uppercase tracking-[0.22em] text-brand border-b border-border pb-2 mb-3">
-                  Assumptions
-                </div>
-                <div className="space-y-4">
+        {/* ══ STICKY ASSUMPTIONS BAR ══ */}
+        <div className={cn(
+          "sticky z-40 bg-background/95 backdrop-blur-sm border-b border-border -mx-4 sm:-mx-8 px-4 sm:px-8 mb-6 transition-all",
+          mobile ? "top-[6.5rem]" : "top-[6.5rem]"
+        )}>
+          <div className="max-w-7xl mx-auto py-3">
+            <div className={cn(
+              "flex items-end gap-x-6 gap-y-3 flex-wrap",
+            )}>
+              <div className="flex items-center gap-1.5 mr-auto sm:mr-0">
+                <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-brand">Assumptions</span>
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className={cn(
+                  "flex items-end gap-x-5 gap-y-3 flex-wrap",
+                )}>
+                  {/* House Price Growth */}
                   <div>
-                    <label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center mb-2">
-                      House Price Growth <Tip text="Annual property value increase. UK long-term avg ~3.5%." />
+                    <label className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center mb-1.5">
+                      HP Growth <Tip text="Annual property value increase. UK long-term avg ~3.5%." />
                     </label>
                     <PresetSelector presets={hpPresets} value={houseGrowth} onChange={setHouseGrowth} />
                   </div>
+
+                  {/* Investment Return */}
                   <div>
-                    <label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center mb-2">
-                      Investment Return <Tip text="Opportunity cost — what your deposit would earn invested instead." />
+                    <label className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center mb-1.5">
+                      Invest Return <Tip text="Opportunity cost — what your deposit would earn invested instead." />
                     </label>
                     <PresetSelector presets={invPresets} value={investReturn} onChange={setInvestReturn} />
                   </div>
-                  <div className={cn("grid gap-4", mobile ? "grid-cols-1" : "grid-cols-3")}>
-                    <Field label="Monthly Rent" prefix="£" value={monthlyRent} onChange={setMonthlyRent} tip="Monthly rent for the selected flat. Auto-filled from Gaff Tracker price." fieldKey="monthlyRent" />
-                    <Field label="Rent Inflation" suffix="% p.a." value={rentInflation} onChange={setRentInflation} tip="Annual rent increase. UK cities: 4–8% recently, long-term avg 2–3%." fieldKey="rentInflation" />
-                    <Field label="Time Horizon" suffix="yrs" value={horizonYears} onChange={setHorizonYears} tip="3–5 years short-term, 15–25 long-term." fieldKey="horizonYears" />
+
+                  {/* Compact numeric fields */}
+                  <div className="w-[100px]">
+                    <Field label="Rent" prefix="£" value={monthlyRent} onChange={setMonthlyRent} tip="Monthly rent. Auto-filled from Gaff Tracker." fieldKey="monthlyRent" />
+                  </div>
+                  <div className="w-[80px]">
+                    <Field label="Rent Infl." suffix="%" value={rentInflation} onChange={setRentInflation} tip="Annual rent increase." fieldKey="rentInflation" />
+                  </div>
+                  <div className="w-[70px]">
+                    <Field label="Horizon" suffix="yr" value={horizonYears} onChange={setHorizonYears} tip="3–5 years short-term, 15–25 long-term." fieldKey="horizonYears" />
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        )}
+        </div>
 
         {/* ══ EMPTY STATE ══ */}
         {!results && (
