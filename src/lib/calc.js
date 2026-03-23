@@ -41,6 +41,7 @@ export function runProjection(cfg) {
     monthlyRent, rentInflation, stampDuty, solicitorFees, surveyFees, movingCosts,
     maintenance, serviceCharge, buildingsInsurance, lifeInsurance, boilerCover, groundRent,
     estateAgentPct, sellingConveyancing, epcCost, houseGrowth, investReturn, horizonYears,
+    costInflation = 0,
   } = cfg;
 
   const loanAmount = Math.max(0, propertyValue - deposit);
@@ -53,7 +54,8 @@ export function runProjection(cfg) {
   const rT = Math.max(0, mortgageTerm - fixedPeriod);
   const p2 = rT > 0 ? pmtCalc(Math.max(0, bR), revertRate, rT) : 0;
   const mI = investReturn / 100 / 12, mH = houseGrowth / 100 / 12, mR = rentInflation / 100 / 12;
-  let rW = totalUpfront, cB = totalUpfront, cR = 0, costBE = null, wBE = null;
+  const mC_inf = costInflation / 100 / 12;
+  let rW = totalUpfront, bS = 0, cB = totalUpfront, cR = 0, costBE = null, wBE = null;
   const wD = [], cD = [], mC = [];
 
   for (let m = 0; m <= months; m++) {
@@ -63,14 +65,24 @@ export function runProjection(cfg) {
     const sC = pV * (estateAgentPct * 1.2 / 100) + sellingConveyancing + epcCost;
     const nE = pV - b - sC;
     const mp = m > 0 && m <= mM ? (m <= fM ? p1 : p2) : 0;
-    const bM = mp + ongoingMonthly;
+    const inflatedOngoing = ongoingMonthly * Math.pow(1 + mC_inf, m);
+    const bM = mp + inflatedOngoing;
     const rent = monthlyRent * Math.pow(1 + mR, m);
-    if (m > 0) { cB += bM; cR += rent; rW *= (1 + mI); if (bM > rent) rW += bM - rent; }
-    wD.push({ month: m, buyWealth: nE, rentWealth: rW });
+    if (m > 0) {
+      cB += bM; cR += rent;
+      // Renter invests surplus when buying costs more
+      rW *= (1 + mI);
+      if (bM > rent) rW += bM - rent;
+      // Buyer invests surplus when renting costs more
+      bS *= (1 + mI);
+      if (rent > bM) bS += rent - bM;
+    }
+    const buyWealth = nE + bS;
+    wD.push({ month: m, buyWealth, rentWealth: rW, buyEquity: nE, buySurplus: bS });
     cD.push({ month: m, buyCost: cB - nE, rentCost: cR });
     if (m % 12 === 0) mC.push({ year: m / 12, buy: Math.round(bM), rent: Math.round(rent) });
     if (costBE === null && m > 0 && (cB - nE) < cR) costBE = m;
-    if (wBE === null && m > 0 && nE > rW) wBE = m;
+    if (wBE === null && m > 0 && buyWealth > rW) wBE = m;
   }
   return { wD, cD, mC, costBE, wBE, loanAmount, ongoingMonthly, totalUpfront };
 }

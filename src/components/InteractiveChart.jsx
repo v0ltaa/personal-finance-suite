@@ -74,7 +74,60 @@ const breakEvenPlugin = {
     ctx.restore();
   },
 };
-ChartJS.register(breakEvenPlugin);
+
+const markersPlugin = {
+  id: "chartMarkers",
+  afterDraw(chart) {
+    const items = chart.options.plugins.chartMarkers?.items;
+    if (!items?.length) return;
+    const { ctx, chartArea: { top, bottom }, scales: { x } } = chart;
+    const cc = getChartColors();
+    const padding = 5;
+    const badgeHeight = 18;
+    const fontSize = 10;
+    items.forEach((m, i) => {
+      if (m.index < 0) return;
+      const xPos = x.getPixelForValue(m.index);
+      if (xPos < x.left || xPos > x.right) return;
+      const color = m.color || cc.faint;
+      ctx.save();
+      // Dashed vertical line
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(xPos, top);
+      ctx.lineTo(xPos, bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Pill badge inside chart at top of line, stacked per marker
+      const label = m.label || `${i + 1}`;
+      const text = m.text ? `${label}  ${m.text}` : label;
+      ctx.font = `600 ${fontSize}px "Instrument Sans", sans-serif`;
+      const textW = ctx.measureText(text).width;
+      const badgeW = textW + padding * 2;
+      const yTop = top + 6 + i * (badgeHeight + 4);
+      // Clamp x so badge stays inside chart area
+      const bx = Math.max(x.left + 2, Math.min(xPos - badgeW / 2, x.right - badgeW - 2));
+      // Badge background
+      ctx.fillStyle = color + "22";
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      const r = 4;
+      ctx.beginPath();
+      ctx.roundRect(bx, yTop, badgeW, badgeHeight, r);
+      ctx.fill();
+      ctx.stroke();
+      // Badge text
+      ctx.fillStyle = color;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, bx + padding, yTop + badgeHeight / 2);
+      ctx.restore();
+    });
+  },
+};
+ChartJS.register(breakEvenPlugin, markersPlugin);
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -104,7 +157,7 @@ function ChartBtn({ active, onClick, children }) {
 
 export default function InteractiveChart({
   data, keys, colors, labels, title,
-  breakEvenMonth, annotation, mobile, formatY = fmtK,
+  breakEvenMonth, annotation, markers, mobile, formatY = fmtK,
   inflationAdjusted = false,
 }) {
   const [chartType, setChartType] = useState("line");
@@ -147,15 +200,17 @@ export default function InteractiveChart({
     pointRadius: processed.length > 100 ? 0 : 2,
     pointHoverRadius: 5,
     borderWidth: chartType === "line" ? 2.5 : 0,
-    borderDash: inflationAdjusted && chartType === "line" ? [6, 4] : [],
+    borderDash: [],
   }));
 
   const chartData = { labels: chartLabels, datasets };
 
+  const markerCount = markers?.length || 0;
   const options = {
     responsive: true,
     maintainAspectRatio: true,
     aspectRatio: mobile ? 1.3 : 2.2,
+    layout: undefined,
     interaction: { mode: "index", intersect: false },
     plugins: {
       legend: {
@@ -188,6 +243,12 @@ export default function InteractiveChart({
       breakEvenLine: {
         month: breakEvenMonth != null ? processed.findIndex((d) => d.month >= breakEvenMonth) : -1,
         label: annotation || (breakEvenMonth != null ? `Break-even: Yr ${(breakEvenMonth / 12).toFixed(1)}` : ""),
+      },
+      chartMarkers: {
+        items: (markers || []).map((m) => ({
+          ...m,
+          index: processed.findIndex((d) => d.month >= m.month),
+        })),
       },
     },
     scales: {
