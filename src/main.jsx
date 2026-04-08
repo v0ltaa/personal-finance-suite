@@ -12,6 +12,7 @@ import GaffTracker from "./pages/GaffTracker";
 import PropertyComparison from "./pages/PropertyComparison";
 import MapView from "./pages/MapView";
 import FinanceTracker from "./pages/FinanceTracker";
+import BudgetDesigner from "./pages/BudgetDesigner";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
@@ -25,6 +26,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           <Route path="compare" element={<PropertyComparison />} />
           <Route path="map" element={<MapView />} />
           <Route path="finance" element={<FinanceTracker />} />
+          <Route path="budget" element={<BudgetDesigner />} />
         </Route>
       </Routes>
     </HashRouter>

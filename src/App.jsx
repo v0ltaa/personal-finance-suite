@@ -11,7 +11,7 @@ import { Select } from "./components/ui/select";
 import { cn } from "./lib/utils";
 import {
   ListFilter, User, LogOut,
-  BarChart2, Home, Map, Calculator, Layers, Wallet
+  BarChart2, Home, Map, Calculator, Layers, Wallet, PiggyBank
 } from "lucide-react";
 
 const modules = [
@@ -21,6 +21,7 @@ const modules = [
   { key: "buyVsRent",      label: "Buy Scenario",  path: "/",        icon: Calculator,  wip: true },
   { key: "sandbox",        label: "Rent vs Buy",   path: "/sandbox", icon: BarChart2,   wip: true },
   { key: "financeTracker", label: "Budget Tracker",path: "/finance", icon: Wallet,      wip: true },
+  { key: "budgetDesigner", label: "Budget Designer",path: "/budget", icon: PiggyBank },
 ];
 
 export default function App() {
@@ -49,7 +50,7 @@ export default function App() {
   };
 
   const currentPath = location.pathname;
-  const isFullWidth = currentPath === "/map" || currentPath === "/compare" || currentPath === "/sandbox";
+  const isFullWidth = currentPath === "/map" || currentPath === "/compare" || currentPath === "/sandbox" || currentPath === "/budget";
 
   const avatarUrl = auth.user ? getAvatarUrl(auth.user) : null;
   const avatarInitial = auth.user
