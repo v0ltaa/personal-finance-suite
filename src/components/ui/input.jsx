@@ -19,9 +19,9 @@ export const Input = forwardRef(function Input({ className, type = "text", prefi
             "transition-colors duration-150",
             "focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent",
             "disabled:cursor-not-allowed disabled:opacity-50",
-            prefix && "pl-7",
-            suffix && "pr-10",
-            "px-3 py-2",
+            prefix ? "pl-7" : "pl-3",
+            suffix ? "pr-10" : "pr-3",
+            "py-2",
             className
           )}
           {...props}

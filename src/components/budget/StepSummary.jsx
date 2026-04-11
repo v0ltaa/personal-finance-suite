@@ -59,7 +59,7 @@ function WarningCard({ children }) {
   );
 }
 
-export default function StepSummary({ budget, onEdit, onSave, onReset }) {
+export default function StepSummary({ budget, onEdit, onSave, onReset, onViewOverview }) {
   const takeHome = budget.income.monthlyTakeHome;
   const committed = budget.committedTotal;
   const essentials = budget.essentialsTotal;
@@ -282,14 +282,31 @@ export default function StepSummary({ budget, onEdit, onSave, onReset }) {
         </div>
       )}
 
-      {/* 5. Actions */}
+      {/* 5. Save & continue */}
+      <Card className="border-brand/30 bg-brand/5">
+        <CardContent className="py-5">
+          <h3 className="font-semibold text-foreground mb-1">Save your budget</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Save to keep it, then see everything on one screen.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="brand" size="lg" onClick={onSave} className="gap-2">
+              <Save size={16} />
+              Save Budget
+            </Button>
+            {onViewOverview && (
+              <Button variant="outline" size="lg" onClick={onViewOverview} className="gap-2">
+                View Overview
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 6. Secondary actions */}
       <Card>
         <CardContent className="py-4">
           <div className="flex flex-wrap gap-2">
-            <Button variant="brand" size="md" onClick={onSave} className="gap-2">
-              <Save size={14} />
-              Save Budget
-            </Button>
             <Button variant="outline" size="md" onClick={onReset} className="gap-2">
               <RotateCcw size={14} />
               Start Fresh

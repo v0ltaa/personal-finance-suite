@@ -10,6 +10,7 @@ import StepEssentials from "../components/budget/StepEssentials";
 import StepSavings from "../components/budget/StepSavings";
 import StepLifestyle from "../components/budget/StepLifestyle";
 import StepSummary from "../components/budget/StepSummary";
+import BudgetOverview from "../components/budget/BudgetOverview";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
@@ -128,10 +129,14 @@ export default function BudgetDesigner() {
     DEFAULT_DISCRETIONARY.map((i) => ({ ...i, id: crypto.randomUUID() }))
   );
 
+  // View mode: "wizard" or "overview"
+  const [viewMode, setViewMode] = useState("wizard");
+
   // Save dialog
   const [showSave, setShowSave] = useState(false);
   const [showLoad, setShowLoad] = useState(false);
   const [budgetName, setBudgetName] = useState("");
+  const [loadedBudgetId, setLoadedBudgetId] = useState(null);
 
   // Computed totals
   const committedTotal = useMemo(() => sumMonthly(committed), [committed]);
@@ -155,31 +160,43 @@ export default function BudgetDesigner() {
   }), [income, committed, essentials, savings, discretionary, committedTotal, essentialsTotal, savingsTotal, lifestyleTotal]);
 
   // Navigation
-  const goToStep = useCallback((s) => setStep(s), []);
+  const goToStep = useCallback((s) => {
+    setStep(s);
+    setViewMode("wizard");
+  }, []);
   const continueToNext = useCallback(() => {
     setCompletedSteps((prev) => [...new Set([...prev, step])]);
     setStep((s) => s + 1);
   }, [step]);
 
   // Save / Load / Reset
-  const handleSave = () => {
+  const buildBudgetData = (id) => ({
+    id: id || crypto.randomUUID(),
+    name: budgetName.trim(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    income: { ...income },
+    committed: committed.map((i) => ({ ...i, monthlyAmount: toMonthly(i.amount, i.frequency) })),
+    essentials: essentials.map((i) => ({ ...i, monthlyAmount: toMonthly(i.amount, i.frequency) })),
+    savings: savings.map((i) => ({ ...i, monthlyAmount: toMonthly(i.amount, i.frequency) })),
+    discretionary: discretionary.map((i) => ({ ...i, monthlyAmount: toMonthly(i.amount, i.frequency) })),
+  });
+
+  const handleSave = (overwrite = false) => {
     if (!budgetName.trim()) return;
-    const budgets = loadBudgets();
-    const budget = {
-      id: crypto.randomUUID(),
-      name: budgetName.trim(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      income: { ...income },
-      committed: committed.map((i) => ({ ...i, monthlyAmount: toMonthly(i.amount, i.frequency) })),
-      essentials: essentials.map((i) => ({ ...i, monthlyAmount: toMonthly(i.amount, i.frequency) })),
-      savings: savings.map((i) => ({ ...i, monthlyAmount: toMonthly(i.amount, i.frequency) })),
-      discretionary: discretionary.map((i) => ({ ...i, monthlyAmount: toMonthly(i.amount, i.frequency) })),
-    };
-    budgets.push(budget);
+    let budgets = loadBudgets();
+    if (overwrite && loadedBudgetId) {
+      budgets = budgets.map((b) =>
+        b.id === loadedBudgetId ? buildBudgetData(loadedBudgetId) : b
+      );
+    } else {
+      const newBudget = buildBudgetData();
+      budgets.push(newBudget);
+      setLoadedBudgetId(newBudget.id);
+    }
     saveBudgets(budgets);
-    setBudgetName("");
     setShowSave(false);
+    setViewMode("overview");
   };
 
   const handleLoad = (budget) => {
@@ -188,8 +205,10 @@ export default function BudgetDesigner() {
     setEssentials(budget.essentials);
     setSavings(budget.savings);
     setDiscretionary(budget.discretionary);
-    setStep(5); // Go to summary
+    setBudgetName(budget.name || "");
+    setLoadedBudgetId(budget.id);
     setCompletedSteps([0, 1, 2, 3, 4]);
+    setViewMode("overview");
     setShowLoad(false);
   };
 
@@ -207,6 +226,9 @@ export default function BudgetDesigner() {
     setDiscretionary(defaults.discretionary);
     setStep(0);
     setCompletedSteps([]);
+    setBudgetName("");
+    setLoadedBudgetId(null);
+    setViewMode("wizard");
   };
 
   // ── Render step content ──
@@ -261,6 +283,7 @@ export default function BudgetDesigner() {
             onEdit={goToStep}
             onSave={() => setShowSave(true)}
             onReset={handleReset}
+            onViewOverview={() => setViewMode("overview")}
           />
         );
       default:
@@ -269,6 +292,108 @@ export default function BudgetDesigner() {
   };
 
   const savedBudgets = showLoad ? loadBudgets() : [];
+
+  // Overview mode — full-width grid
+  if (viewMode === "overview") {
+    return (
+      <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
+        <BudgetOverview
+          budget={budgetSummary}
+          budgetName={budgetName}
+          onSave={() => setShowSave(true)}
+          onReset={handleReset}
+          onChangeCommitted={setCommitted}
+          onChangeEssentials={setEssentials}
+          onChangeSavings={setSavings}
+          onChangeDiscretionary={setDiscretionary}
+        />
+
+        {/* Save dialog with overwrite/save-as-new */}
+        {showSave && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowSave(false)}>
+            <Card className="w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+              <CardContent className="py-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-foreground">Save Budget</h3>
+                  <Button variant="ghost" size="icon-sm" onClick={() => setShowSave(false)}>
+                    <X size={14} />
+                  </Button>
+                </div>
+                <Input
+                  value={budgetName}
+                  onChange={(e) => setBudgetName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSave(!!loadedBudgetId)}
+                  placeholder="e.g. April 2026"
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  {loadedBudgetId && (
+                    <Button variant="brand" size="md" onClick={() => handleSave(true)} disabled={!budgetName.trim()} className="flex-1 gap-2">
+                      <Save size={14} />
+                      Overwrite
+                    </Button>
+                  )}
+                  <Button
+                    variant={loadedBudgetId ? "outline" : "brand"}
+                    size="md"
+                    onClick={() => handleSave(false)}
+                    disabled={!budgetName.trim()}
+                    className="flex-1 gap-2"
+                  >
+                    <Save size={14} />
+                    Save as New
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Load dialog */}
+        {showLoad && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowLoad(false)}>
+            <Card className="w-full max-w-md mx-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <CardContent className="py-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-foreground">Saved Budgets</h3>
+                  <Button variant="ghost" size="icon-sm" onClick={() => setShowLoad(false)}>
+                    <X size={14} />
+                  </Button>
+                </div>
+                {savedBudgets.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">No saved budgets yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {savedBudgets.map((b) => (
+                      <div
+                        key={b.id}
+                        className="flex items-center justify-between p-3 border border-border rounded-lg hover:bg-muted/30 transition-colors"
+                      >
+                        <button onClick={() => handleLoad(b)} className="flex-1 text-left">
+                          <p className="text-sm font-medium">{b.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(b.updatedAt).toLocaleDateString("en-GB")}
+                          </p>
+                        </button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => handleDelete(b.id)}
+                          className="text-muted-foreground hover:text-danger"
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
