@@ -1,19 +1,13 @@
 import { cn } from "../../lib/utils";
 import { Check } from "lucide-react";
 
-const STEPS = [
-  { label: "Income", short: "1" },
-  { label: "Committed", short: "2" },
-  { label: "Essentials", short: "3" },
-  { label: "Savings", short: "4" },
-  { label: "Lifestyle", short: "5" },
-  { label: "Summary", short: "6" },
-];
+const DEFAULT_LABELS = ["Setup", "Income", "Committed", "Essentials", "Savings", "Lifestyle", "Summary"];
 
-export default function ProgressIndicator({ currentStep, onStepClick, completedSteps }) {
+export default function ProgressIndicator({ currentStep, onStepClick, completedSteps, stepLabels }) {
+  const labels = stepLabels || DEFAULT_LABELS;
   return (
     <nav className="flex items-center gap-1 sm:gap-2 overflow-x-auto py-3 px-1">
-      {STEPS.map((step, i) => {
+      {labels.map((label, i) => {
         const isActive = i === currentStep;
         const isCompleted = completedSteps.includes(i);
         const isClickable = isCompleted || i <= Math.max(...completedSteps, 0);
@@ -39,7 +33,7 @@ export default function ProgressIndicator({ currentStep, onStepClick, completedS
                 {i + 1}
               </span>
             )}
-            <span className="hidden sm:inline">{step.label}</span>
+            <span className="hidden sm:inline">{label}</span>
           </button>
         );
       })}

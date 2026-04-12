@@ -2,12 +2,12 @@ import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { cn } from "../../lib/utils";
-import { toMonthly } from "../../lib/ukTax";
+import { toMonthly, fmtMoney } from "../../lib/ukTax";
 import BudgetLineItem from "./BudgetLineItem";
 import Tip from "../Tip";
 import { ArrowRight, Plus } from "lucide-react";
 
-const fmt = (n) => "£" + Math.round(n).toLocaleString("en-GB");
+const fmt = fmtMoney;
 
 function EmergencyFundIndicator({ monthlyAmount, monthlyExpenses }) {
   if (monthlyAmount <= 0 || monthlyExpenses <= 0) return null;
@@ -41,18 +41,18 @@ function LisaIndicator({ monthlyAmount }) {
   );
 }
 
-export default function StepSavings({ items, onChange, takeHome, surplus, committedTotal, essentialsTotal, onContinue }) {
+export default function StepSavings({ items, onChange, takeHome, surplus, committedTotal, essentialsTotal, lifestyleTotal = 0, budgetMode = "traditional", onContinue }) {
+  const isRealistic = budgetMode === "realistic";
   const total = items.reduce((s, i) => s + toMonthly(i.amount, i.frequency), 0);
   const savingsRate = takeHome > 0 ? (total / takeHome) * 100 : 0;
-  const funMoney = surplus - total;
-  const dailyBudget = funMoney / 30;
+  const remaining = Math.round((surplus - total) * 100) / 100;
   const monthlyExpenses = committedTotal + essentialsTotal;
 
   const helpers = {
-    "Emergency fund": null, // Custom indicator below
+    "Emergency fund": null,
     LISA: "Max £4,000/yr (£333/mo). You get a 25% bonus — £1,000 free per year.",
     "ISA / Investments": "Stocks & shares ISA, index funds, etc",
-    "Other savings": "Holiday fund, house deposit, specific goals",
+    "Other savings": "House deposit, specific goals",
   };
 
   const handleItemChange = (id, updated) => {
@@ -82,13 +82,44 @@ export default function StepSavings({ items, onChange, takeHome, surplus, commit
     <div className="animate-fade-in space-y-6">
       <div>
         <h2 className="font-serif text-2xl sm:text-3xl text-foreground">
-          Secure your future before you spend
-          <Tip text="'Pay yourself first' — a principle from George S. Clason's 'The Richest Man in Babylon' (1926). We put savings before lifestyle spending deliberately: if you wait to save what's left over, there's never anything left. The 50/30/20 rule allocates 20% here. Martin Lewis recommends building a 3-month emergency fund first (moneysavingexpert.com/savings/emergency-fund), then using tax-free wrappers like ISAs (up to £20k/yr) and LISAs (gov.uk/lifetime-isa)." />
+          {isRealistic ? "What's left to save" : "Secure your future before you spend"}
+          <Tip text={isRealistic
+            ? "This is what's left after your needs and wants. Decide how to split it between savings goals — emergency fund first, then tax-free wrappers like ISAs and LISAs."
+            : "'Pay yourself first' — a principle from George S. Clason's 'The Richest Man in Babylon' (1926). We put savings before lifestyle spending deliberately: if you wait to save what's left over, there's never anything left. The 50/30/20 rule allocates 20% here. Martin Lewis recommends building a 3-month emergency fund first (moneysavingexpert.com/savings/emergency-fund), then using tax-free wrappers like ISAs (up to £20k/yr) and LISAs (gov.uk/lifetime-isa)."
+          } />
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Set aside savings and investments from your surplus before allocating fun money.
+          {isRealistic
+            ? "Allocate your remaining balance across savings goals."
+            : "Set aside savings and investments from your surplus before allocating fun money."}
         </p>
       </div>
+
+      {/* Balance after wants & needs — realistic mode */}
+      {isRealistic && (
+        <Card className={cn(
+          "border-2",
+          surplus >= 0 ? "border-success/40 bg-success/5" : "border-danger/40 bg-danger/5"
+        )}>
+          <CardContent className="py-5 text-center">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+              Balance after wants & needs
+            </p>
+            <p className={cn(
+              "text-3xl sm:text-4xl font-bold tabular-nums",
+              surplus >= 0 ? "text-success" : "text-danger"
+            )}>
+              {fmt(surplus)}/mo
+            </p>
+            <p className="text-sm text-muted-foreground mt-1 tabular-nums">
+              {fmt(surplus * 12)}/yr
+            </p>
+            <p className="text-xs text-muted-foreground mt-2">
+              This is your total savings pot. Distribute it across your goals below.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="space-y-0.5 border border-border rounded-lg px-3 py-2">
         {items.map((item) => {
@@ -146,31 +177,61 @@ export default function StepSavings({ items, onChange, takeHome, surplus, commit
         </CardContent>
       </Card>
 
-      {/* Fun Money */}
-      <Card className={cn(
-        "border-2",
-        funMoney >= 0 ? "border-brand/30 bg-brand/5" : "border-danger/40 bg-danger/5"
-      )}>
-        <CardContent className="py-6 text-center">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-            Fun Money
-          </p>
-          <p className={cn(
-            "text-3xl sm:text-4xl font-bold tabular-nums",
-            funMoney >= 0 ? "text-brand" : "text-danger"
-          )}>
-            {fmt(funMoney)}/mo
-          </p>
-          <p className="text-lg font-semibold text-muted-foreground mt-1 tabular-nums">
-            £{dailyBudget.toFixed(2)}/day
-          </p>
-          {funMoney < 0 && (
-            <p className="text-xs text-danger mt-2">
-              Your savings exceed your surplus. Go back and adjust.
+      {/* Remaining / unallocated */}
+      {!isRealistic && (
+        <Card className={cn(
+          "border-2",
+          remaining >= 0 ? "border-brand/30 bg-brand/5" : "border-danger/40 bg-danger/5"
+        )}>
+          <CardContent className="py-6 text-center">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+              Fun Money
             </p>
-          )}
-        </CardContent>
-      </Card>
+            <p className={cn(
+              "text-3xl sm:text-4xl font-bold tabular-nums",
+              remaining >= 0 ? "text-brand" : "text-danger"
+            )}>
+              {fmt(remaining)}/mo
+            </p>
+            <p className="text-lg font-semibold text-muted-foreground mt-1 tabular-nums">
+              £{(remaining / 30).toFixed(2)}/day
+            </p>
+            {remaining < 0 && (
+              <p className="text-xs text-danger mt-2">
+                Your savings exceed your surplus. Go back and adjust.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {isRealistic && (
+        <Card className={cn(
+          "border-2",
+          remaining === 0 ? "border-success/40 bg-success/5" : remaining > 0 ? "border-warning/40 bg-warning/5" : "border-danger/40 bg-danger/5"
+        )}>
+          <CardContent className="py-4 text-center">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+              {remaining === 0 ? "Fully allocated" : remaining > 0 ? "Still to allocate" : "Over-allocated"}
+            </p>
+            <p className={cn(
+              "text-2xl font-bold tabular-nums",
+              remaining === 0 ? "text-success" : remaining > 0 ? "text-warning" : "text-danger"
+            )}>
+              {fmt(remaining)}/mo
+            </p>
+            {remaining === 0 && (
+              <p className="text-xs text-success mt-1">All savings distributed across your goals.</p>
+            )}
+            {remaining > 0 && (
+              <p className="text-xs text-muted-foreground mt-1">Move this into your savings goals above.</p>
+            )}
+            {remaining < 0 && (
+              <p className="text-xs text-danger mt-1">You've allocated more than your balance. Reduce a savings goal.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex justify-end pt-2">
         <Button variant="brand" size="lg" onClick={onContinue} className="gap-2">

@@ -4,14 +4,24 @@ import { Input } from "../ui/input";
 import { Select } from "../ui/select";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
-import { toMonthly, FREQUENCY_OPTIONS } from "../../lib/ukTax";
-import { Edit2, Save, RotateCcw, Plus, X } from "lucide-react";
+import { toMonthly, FREQUENCY_OPTIONS, fmtMoney, fmtInputValue, evalFormula } from "../../lib/ukTax";
+import { Chart as ChartJS, ArcElement, Tooltip as ChartTooltip, Legend } from "chart.js";
+import { Doughnut } from "react-chartjs-2";
+import { Edit2, Save, Plus, X, FolderOpen, Settings2 } from "lucide-react";
 
-const fmt = (n) => "£" + Math.round(n).toLocaleString("en-GB");
+ChartJS.register(ArcElement, ChartTooltip, Legend);
+
+const fmt = fmtMoney;
+
+function effectiveMonthly(item) {
+  const monthly = toMonthly(item.amount, item.frequency);
+  if (item.name === "Council Tax" && item.singlePerson) return monthly * 0.75;
+  return monthly;
+}
 
 // ── Ring gauge (compact) ──
 
-function RingGauge({ label, actual, target, isMin }) {
+function RingGauge({ label, actual, target, isMin, amount }) {
   const pct = Math.min(actual, 100);
   const onTarget = isMin ? actual >= target : actual <= target;
   const close = isMin ? actual >= target - 5 : actual <= target + 5;
@@ -38,6 +48,9 @@ function RingGauge({ label, actual, target, isMin }) {
         </div>
       </div>
       <p className="text-[10px] font-medium text-muted-foreground">{label} {isMin ? "≥" : "≤"}{target}%</p>
+      {amount !== undefined && (
+        <p className="text-[10px] tabular-nums text-muted-foreground">{fmt(amount)}</p>
+      )}
     </div>
   );
 }
@@ -56,10 +69,28 @@ function LineRow({ label, amount }) {
 // ── Editable line item (used inside dialog) ──
 
 function EditableRow({ item, onChange, onRemove }) {
+  const [rawInput, setRawInput] = useState(null);
+
   const handleAmountChange = (e) => {
-    const raw = e.target.value.replace(/,/g, "");
-    const val = raw === "" ? 0 : Math.max(0, Number(raw));
+    const raw = e.target.value;
+    if (raw.startsWith("=")) {
+      setRawInput(raw);
+      return;
+    }
+    setRawInput(null);
+    const clean = raw.replace(/,/g, "");
+    const val = clean === "" ? 0 : Math.max(0, Number(clean));
     if (!isNaN(val)) onChange({ ...item, amount: val });
+  };
+
+  const handleAmountBlur = () => {
+    if (rawInput && rawInput.startsWith("=")) {
+      const result = evalFormula(rawInput.slice(1));
+      if (!isNaN(result) && result >= 0) {
+        onChange({ ...item, amount: Math.round(result * 100) / 100 });
+      }
+      setRawInput(null);
+    }
   };
 
   return (
@@ -71,10 +102,12 @@ function EditableRow({ item, onChange, onRemove }) {
       />
       <Input
         type="text"
-        inputMode="numeric"
+        inputMode="decimal"
         prefix="£"
-        value={item.amount === 0 ? "" : item.amount.toLocaleString("en-GB")}
+        value={rawInput !== null ? rawInput : fmtInputValue(item.amount)}
         onChange={handleAmountChange}
+        onBlur={handleAmountBlur}
+        onKeyDown={(e) => e.key === "Enter" && handleAmountBlur()}
         placeholder="0"
         className="w-28 h-8 text-sm text-right"
       />
@@ -118,7 +151,6 @@ function EditDialog({ title, color, items, grouped, onChange, onClose }) {
     onChange([...items, newItem]);
   };
 
-  // Group items by category if grouped
   const groups = useMemo(() => {
     if (!grouped) return null;
     const g = {};
@@ -218,7 +250,7 @@ function CategoryCard({ title, color, items, total, onEdit, children }) {
               <LineRow
                 key={item.id || i}
                 label={item.name}
-                amount={toMonthly(item.amount, item.frequency)}
+                amount={effectiveMonthly(item)}
               />
             )) : (
               <p className="text-xs text-muted-foreground italic py-1">No items yet</p>
@@ -266,7 +298,7 @@ function CommittedCard({ items, total, onEdit }) {
           <div key={cat}>
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mt-1.5 mb-0.5">{cat}</p>
             {catItems.map((item) => (
-              <LineRow key={item.id} label={item.name} amount={toMonthly(item.amount, item.frequency)} />
+              <LineRow key={item.id} label={item.name} amount={effectiveMonthly(item)} />
             ))}
           </div>
         )) : (
@@ -281,9 +313,24 @@ function CommittedCard({ items, total, onEdit }) {
   );
 }
 
+// ── Pie chart colors ──
+
+const PIE_COLORS = [
+  "hsl(18, 72%, 52%)",   // brand
+  "hsl(38, 92%, 50%)",   // amber
+  "hsl(210, 60%, 50%)",  // blue
+  "hsl(280, 50%, 55%)",  // purple
+  "hsl(142, 71%, 40%)",  // green
+  "hsl(340, 60%, 55%)",  // pink
+  "hsl(180, 50%, 45%)",  // teal
+  "hsl(60, 70%, 45%)",   // yellow-green
+  "hsl(0, 60%, 55%)",    // red
+  "hsl(220, 50%, 60%)",  // slate blue
+];
+
 // ── Main overview ──
 
-export default function BudgetOverview({ budget, budgetName, onSave, onReset, onChangeCommitted, onChangeEssentials, onChangeSavings, onChangeDiscretionary }) {
+export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onReset, onSettings, onChangeCommitted, onChangeEssentials, onChangeSavings, onChangeDiscretionary }) {
   const [editingCategory, setEditingCategory] = useState(null);
 
   const takeHome = budget.income.monthlyTakeHome;
@@ -292,11 +339,16 @@ export default function BudgetOverview({ budget, budgetName, onSave, onReset, on
   const savings = budget.savingsTotal;
   const lifestyle = budget.lifestyleTotal;
   const totalOutgoings = committed + essentials + savings + lifestyle;
-  const unallocated = takeHome - totalOutgoings;
+  const unallocated = Math.round((takeHome - totalOutgoings) * 100) / 100;
 
+  const budgetRule = budget.budgetRule || { needs: 50, wants: 30, savings: 20 };
   const needsPct = takeHome > 0 ? ((committed + essentials) / takeHome) * 100 : 0;
   const wantsPct = takeHome > 0 ? (lifestyle / takeHome) * 100 : 0;
   const savingsPct = takeHome > 0 ? (savings / takeHome) * 100 : 0;
+
+  const needsTarget = takeHome * budgetRule.needs / 100;
+  const wantsTarget = takeHome * budgetRule.wants / 100;
+  const savingsTarget = takeHome * budgetRule.savings / 100;
 
   const incomeInfo = budget.income;
   const isManual = incomeInfo.mode === "manual";
@@ -307,6 +359,92 @@ export default function BudgetOverview({ budget, budgetName, onSave, onReset, on
       total = (total + monthly) * (1 + 0.07 / 12);
     }
     return total;
+  };
+
+  // ── Pie chart data ──
+
+  // 1. Needs / Wants / Savings split
+  const splitData = useMemo(() => {
+    const needs = committed + essentials;
+    const segments = [];
+    if (needs > 0) segments.push({ label: "Needs", value: needs, color: "hsl(18, 72%, 52%)" });
+    if (lifestyle > 0) segments.push({ label: "Wants", value: lifestyle, color: "hsl(280, 50%, 55%)" });
+    if (savings > 0) segments.push({ label: "Savings", value: savings, color: "hsl(210, 60%, 50%)" });
+    if (unallocated > 0) segments.push({ label: "Unallocated", value: unallocated, color: "hsl(142, 71%, 40%)" });
+    return {
+      labels: segments.map((s) => s.label),
+      datasets: [{
+        data: segments.map((s) => s.value),
+        backgroundColor: segments.map((s) => s.color),
+        borderWidth: 2,
+        borderColor: "hsl(40, 30%, 97%)",
+      }],
+    };
+  }, [committed, essentials, lifestyle, savings, unallocated]);
+
+  // 2. Individual category breakdown
+  const categoryData = useMemo(() => {
+    const cats = [];
+    // Group committed by category
+    const committedGroups = {};
+    budget.committed.forEach((item) => {
+      if (item.amount === 0) return;
+      const cat = item.category || "Other";
+      committedGroups[cat] = (committedGroups[cat] || 0) + effectiveMonthly(item);
+    });
+    Object.entries(committedGroups).forEach(([cat, val]) => cats.push({ label: cat, value: val }));
+
+    // Essentials as one
+    if (essentials > 0) cats.push({ label: "Essentials", value: essentials });
+
+    // Individual lifestyle items
+    budget.discretionary.forEach((item) => {
+      const v = toMonthly(item.amount, item.frequency);
+      if (v > 0) cats.push({ label: item.name, value: v });
+    });
+
+    // Savings items
+    budget.savings.forEach((item) => {
+      const v = toMonthly(item.amount, item.frequency);
+      if (v > 0) cats.push({ label: item.name, value: v });
+    });
+
+    if (unallocated > 0) cats.push({ label: "Unallocated", value: unallocated });
+
+    return {
+      labels: cats.map((c) => c.label),
+      datasets: [{
+        data: cats.map((c) => c.value),
+        backgroundColor: cats.map((_, i) => PIE_COLORS[i % PIE_COLORS.length]),
+        borderWidth: 2,
+        borderColor: "hsl(40, 30%, 97%)",
+      }],
+    };
+  }, [budget.committed, budget.discretionary, budget.savings, essentials, unallocated]);
+
+  const pieOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: "bottom",
+        labels: {
+          boxWidth: 10,
+          padding: 10,
+          font: { family: "'Instrument Sans', sans-serif", size: 11 },
+        },
+      },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => {
+            const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+            const pct = total > 0 ? ((ctx.raw / total) * 100).toFixed(1) : 0;
+            return `${ctx.label}: ${fmt(ctx.raw)} (${pct}%)`;
+          },
+        },
+      },
+    },
+    cutout: "55%",
   };
 
   // Edit dialog config
@@ -334,11 +472,23 @@ export default function BudgetOverview({ budget, budgetName, onSave, onReset, on
             <Save size={13} />
             Save
           </Button>
-          <Button variant="outline" size="sm" onClick={onReset} className="gap-1.5">
-            <RotateCcw size={13} />
-            New Budget
+          <Button variant="outline" size="sm" onClick={onLoad} className="gap-1.5">
+            <FolderOpen size={13} />
+            Load
+          </Button>
+          <Button variant="outline" size="sm" onClick={onSettings} className="gap-1.5">
+            <Settings2 size={14} />
+            Settings
           </Button>
         </div>
+      </div>
+
+      {/* New budget button — centred */}
+      <div className="flex justify-center">
+        <Button variant="brand" size="lg" onClick={onReset} className="gap-2 bg-foreground hover:bg-foreground/90 text-background px-8">
+          <Plus size={16} />
+          New Budget
+        </Button>
       </div>
 
       {/* Summary strip */}
@@ -368,14 +518,14 @@ export default function BudgetOverview({ budget, budgetName, onSave, onReset, on
         </div>
       </div>
 
-      {/* 50/30/20 gauges + insights inline */}
+      {/* Budget rule gauges + insights */}
       <Card>
         <CardContent className="py-4 px-5">
           <div className="flex flex-wrap items-start gap-6">
             <div className="flex gap-5">
-              <RingGauge label="Needs" actual={needsPct} target={50} isMin={false} />
-              <RingGauge label="Wants" actual={wantsPct} target={30} isMin={false} />
-              <RingGauge label="Savings" actual={savingsPct} target={20} isMin={true} />
+              <RingGauge label="Needs" actual={needsPct} target={budgetRule.needs} isMin={false} amount={committed + essentials} />
+              <RingGauge label="Wants" actual={wantsPct} target={budgetRule.wants} isMin={false} amount={lifestyle} />
+              <RingGauge label="Savings" actual={savingsPct} target={budgetRule.savings} isMin={true} amount={savings} />
             </div>
             <div className="hidden sm:block w-px bg-border self-stretch" />
             <div className="flex flex-wrap gap-x-6 gap-y-2 flex-1 min-w-0">
@@ -396,15 +546,9 @@ export default function BudgetOverview({ budget, budgetName, onSave, onReset, on
                 </div>
               )}
               <div className="w-full max-w-xs">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Allocated</p>
-                <div className="w-full bg-muted rounded-full h-1.5 mt-1">
-                  <div
-                    className={cn("h-1.5 rounded-full transition-all", unallocated >= 0 ? "bg-success" : "bg-danger")}
-                    style={{ width: `${Math.min(100, takeHome > 0 ? (totalOutgoings / takeHome) * 100 : 0)}%` }}
-                  />
-                </div>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {takeHome > 0 ? ((totalOutgoings / takeHome) * 100).toFixed(0) : 0}% of take-home
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Budget rule</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {budgetRule.needs}/{budgetRule.wants}/{budgetRule.savings} — Needs {fmt(needsTarget)} · Wants {fmt(wantsTarget)} · Savings {fmt(savingsTarget)}
                 </p>
               </div>
             </div>
@@ -453,6 +597,32 @@ export default function BudgetOverview({ budget, budgetName, onSave, onReset, on
 
         <CategoryCard title="Lifestyle" color="bg-purple-500" items={budget.discretionary} total={lifestyle} onEdit={() => setEditingCategory("lifestyle")} />
       </div>
+
+      {/* Cash flow pie charts */}
+      {takeHome > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Card>
+            <div className="p-4 pb-2">
+              <h3 className="text-sm font-semibold text-foreground">Needs · Wants · Savings</h3>
+            </div>
+            <CardContent className="pt-0 pb-4 px-4">
+              <div className="h-64">
+                <Doughnut data={splitData} options={pieOptions} />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <div className="p-4 pb-2">
+              <h3 className="text-sm font-semibold text-foreground">By Category</h3>
+            </div>
+            <CardContent className="pt-0 pb-4 px-4">
+              <div className="h-64">
+                <Doughnut data={categoryData} options={pieOptions} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Edit dialog */}
       {activeEdit && (

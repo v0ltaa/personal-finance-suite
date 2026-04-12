@@ -1,15 +1,15 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Input } from "../ui/input";
 import { Select } from "../ui/select";
 import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
-import { calcMonthlyTakeHome, STUDENT_LOAN_OPTIONS, toMonthly } from "../../lib/ukTax";
+import { calcMonthlyTakeHome, STUDENT_LOAN_OPTIONS, toMonthly, fmtMoney, fmtInputValue, evalFormula } from "../../lib/ukTax";
 import BudgetLineItem from "./BudgetLineItem";
 import Tip from "../Tip";
 import { ArrowRight, Plus } from "lucide-react";
 
-const fmt = (n) => "£" + Math.round(n).toLocaleString("en-GB");
+const fmt = fmtMoney;
 
 export default function StepIncome({ income, onChange, onContinue }) {
   const isManual = income.mode === "manual";
@@ -37,16 +37,39 @@ export default function StepIncome({ income, onChange, onContinue }) {
     Promise.resolve().then(() => onChange({ ...income, monthlyTakeHome }));
   }
 
+  const [grossRaw, setGrossRaw] = useState(null);
+  const [manualRaw, setManualRaw] = useState(null);
+
   const handleGrossChange = (e) => {
-    const raw = e.target.value.replace(/,/g, "");
-    const val = raw === "" ? 0 : Math.max(0, Number(raw));
+    const raw = e.target.value;
+    if (raw.startsWith("=")) { setGrossRaw(raw); return; }
+    setGrossRaw(null);
+    const clean = raw.replace(/,/g, "");
+    const val = clean === "" ? 0 : Math.max(0, Number(clean));
     if (!isNaN(val)) update("grossAnnual", val);
+  };
+  const handleGrossBlur = () => {
+    if (grossRaw?.startsWith("=")) {
+      const r = evalFormula(grossRaw.slice(1));
+      if (!isNaN(r) && r >= 0) update("grossAnnual", Math.round(r * 100) / 100);
+      setGrossRaw(null);
+    }
   };
 
   const handleManualChange = (e) => {
-    const raw = e.target.value.replace(/,/g, "");
-    const val = raw === "" ? 0 : Math.max(0, Number(raw));
+    const raw = e.target.value;
+    if (raw.startsWith("=")) { setManualRaw(raw); return; }
+    setManualRaw(null);
+    const clean = raw.replace(/,/g, "");
+    const val = clean === "" ? 0 : Math.max(0, Number(clean));
     if (!isNaN(val)) update("manualTakeHome", val);
+  };
+  const handleManualBlur = () => {
+    if (manualRaw?.startsWith("=")) {
+      const r = evalFormula(manualRaw.slice(1));
+      if (!isNaN(r) && r >= 0) update("manualTakeHome", Math.round(r * 100) / 100);
+      setManualRaw(null);
+    }
   };
 
   const handleDeductionChange = (id, updated) => {
@@ -107,10 +130,12 @@ export default function StepIncome({ income, onChange, onContinue }) {
             <label className="text-xs font-medium text-muted-foreground">Monthly take-home pay</label>
             <Input
               type="text"
-              inputMode="numeric"
+              inputMode="decimal"
               prefix="£"
-              value={income.manualTakeHome === 0 ? "" : income.manualTakeHome.toLocaleString("en-GB")}
+              value={manualRaw !== null ? manualRaw : fmtInputValue(income.manualTakeHome)}
               onChange={handleManualChange}
+              onBlur={handleManualBlur}
+              onKeyDown={(e) => e.key === "Enter" && handleManualBlur()}
               placeholder="e.g. 2,100"
               className="text-lg h-11"
             />
@@ -127,10 +152,12 @@ export default function StepIncome({ income, onChange, onContinue }) {
             <label className="text-xs font-medium text-muted-foreground">Gross annual salary</label>
             <Input
               type="text"
-              inputMode="numeric"
+              inputMode="decimal"
               prefix="£"
-              value={income.grossAnnual === 0 ? "" : income.grossAnnual.toLocaleString("en-GB")}
+              value={grossRaw !== null ? grossRaw : fmtInputValue(income.grossAnnual)}
               onChange={handleGrossChange}
+              onBlur={handleGrossBlur}
+              onKeyDown={(e) => e.key === "Enter" && handleGrossBlur()}
               placeholder="e.g. 32,000"
               className="text-lg h-11"
             />

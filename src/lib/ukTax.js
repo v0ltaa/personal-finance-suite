@@ -110,3 +110,68 @@ export function toMonthly(amount, frequency) {
   const freq = FREQUENCY_OPTIONS.find((f) => f.value === frequency);
   return amount * (freq?.multiplier ?? 1);
 }
+
+/** Format a number as £X or £X.YZ (pence shown only when fractional) */
+export function fmtMoney(n) {
+  const abs = Math.abs(n);
+  const hasPence = abs % 1 >= 0.005;
+  const formatted = hasPence
+    ? abs.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : Math.round(abs).toLocaleString("en-GB");
+  return (n < 0 ? "-£" : "£") + formatted;
+}
+
+/**
+ * Safely evaluate a simple math expression (no eval).
+ * Supports: numbers, +, -, *, /, parentheses.
+ * Returns NaN if invalid.
+ */
+export function evalFormula(expr) {
+  const s = expr.replace(/\s/g, "");
+  if (!/^[\d.+\-*/()]+$/.test(s)) return NaN;
+  let pos = 0;
+  const peek = () => s[pos];
+  const next = () => s[pos++];
+
+  function parseExpr() {
+    let left = parseTerm();
+    while (peek() === "+" || peek() === "-") {
+      const op = next();
+      const right = parseTerm();
+      left = op === "+" ? left + right : left - right;
+    }
+    return left;
+  }
+  function parseTerm() {
+    let left = parseFactor();
+    while (peek() === "*" || peek() === "/") {
+      const op = next();
+      const right = parseFactor();
+      left = op === "*" ? left * right : left / right;
+    }
+    return left;
+  }
+  function parseFactor() {
+    if (peek() === "(") {
+      next(); // skip (
+      const val = parseExpr();
+      next(); // skip )
+      return val;
+    }
+    const start = pos;
+    while (pos < s.length && (/[\d.]/.test(s[pos]) || (s[pos] === "-" && pos === start))) pos++;
+    return parseFloat(s.slice(start, pos));
+  }
+
+  const result = parseExpr();
+  return pos === s.length ? result : NaN;
+}
+
+/** Format a number for display inside an input (preserve decimals typed by the user) */
+export function fmtInputValue(n) {
+  if (n === 0) return "";
+  const hasPence = n % 1 >= 0.005;
+  return hasPence
+    ? n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : n.toLocaleString("en-GB");
+}

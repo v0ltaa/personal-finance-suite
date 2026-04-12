@@ -1,16 +1,16 @@
 import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
-import { toMonthly } from "../../lib/ukTax";
+import { toMonthly, fmtMoney } from "../../lib/ukTax";
 import BudgetLineItem from "./BudgetLineItem";
 import Tip from "../Tip";
 import { ArrowRight, Plus } from "lucide-react";
 
-const fmt = (n) => "£" + Math.round(n).toLocaleString("en-GB");
+const fmt = fmtMoney;
 
 export default function StepEssentials({ items, onChange, takeHome, committedTotal, onContinue }) {
   const total = items.reduce((s, i) => s + toMonthly(i.amount, i.frequency), 0);
-  const surplus = takeHome - committedTotal - total;
+  const surplus = Math.round((takeHome - committedTotal - total) * 100) / 100;
 
   const helpers = {
     Groceries: "UK average for a single person is roughly £200–250/mo",
@@ -82,7 +82,7 @@ export default function StepEssentials({ items, onChange, takeHome, committedTot
         {/* THE SURPLUS — the most important number */}
         <Card className={cn(
           "border-2",
-          surplus > 0 ? "border-success/40 bg-success/5" : "border-danger/40 bg-danger/5"
+          surplus >= 0 ? "border-success/40 bg-success/5" : "border-danger/40 bg-danger/5"
         )}>
           <CardContent className="py-6 text-center">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
@@ -90,7 +90,7 @@ export default function StepEssentials({ items, onChange, takeHome, committedTot
             </p>
             <p className={cn(
               "text-3xl sm:text-4xl font-bold tabular-nums transition-all duration-300",
-              surplus > 0 ? "text-success" : "text-danger"
+              surplus >= 0 ? "text-success" : "text-danger"
             )}>
               {fmt(surplus)}/mo
             </p>

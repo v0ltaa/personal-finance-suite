@@ -4,16 +4,22 @@ import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { cn } from "../../lib/utils";
-import { toMonthly } from "../../lib/ukTax";
+import { toMonthly, fmtMoney } from "../../lib/ukTax";
+
+function effectiveMonthly(item) {
+  const monthly = toMonthly(item.amount, item.frequency);
+  if (item.name === "Council Tax" && item.singlePerson) return monthly * 0.75;
+  return monthly;
+}
 import BudgetLineItem from "./BudgetLineItem";
 import Tip from "../Tip";
 import { ArrowRight, ChevronDown, ChevronUp, Plus } from "lucide-react";
 
-const fmt = (n) => "£" + Math.round(n).toLocaleString("en-GB");
+const fmt = fmtMoney;
 
 function CategoryGroup({ category, items, onItemChange, onItemRemove, onAddItem, helpers }) {
   const [open, setOpen] = useState(true);
-  const total = items.reduce((s, i) => s + toMonthly(i.amount, i.frequency), 0);
+  const total = items.reduce((s, i) => s + effectiveMonthly(i), 0);
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
@@ -55,7 +61,7 @@ function CategoryGroup({ category, items, onItemChange, onItemRemove, onAddItem,
 
 export default function StepCommitted({ items, onChange, takeHome, onContinue }) {
   const categories = [...new Set(items.map((i) => i.category))];
-  const total = items.reduce((s, i) => s + toMonthly(i.amount, i.frequency), 0);
+  const total = items.reduce((s, i) => s + effectiveMonthly(i), 0);
   const pctOfTakeHome = takeHome > 0 ? (total / takeHome) * 100 : 0;
 
   const helpers = {

@@ -1,12 +1,12 @@
 import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
-import { toMonthly } from "../../lib/ukTax";
+import { toMonthly, fmtMoney } from "../../lib/ukTax";
 import BudgetLineItem from "./BudgetLineItem";
 import Tip from "../Tip";
 import { ArrowRight, Plus } from "lucide-react";
 
-const fmt = (n) => "£" + Math.round(n).toLocaleString("en-GB");
+const fmt = fmtMoney;
 
 const DEFAULT_MONZO_MAP = {
   "Eating out / Drinks": "Eating Out",
@@ -19,7 +19,7 @@ const DEFAULT_MONZO_MAP = {
 
 export default function StepLifestyle({ items, onChange, funMoney, onContinue }) {
   const total = items.reduce((s, i) => s + toMonthly(i.amount, i.frequency), 0);
-  const remaining = funMoney - total;
+  const remaining = Math.round((funMoney - total) * 100) / 100;
   const pctUsed = funMoney > 0 ? (total / funMoney) * 100 : 0;
   const overBudget = remaining < 0;
 

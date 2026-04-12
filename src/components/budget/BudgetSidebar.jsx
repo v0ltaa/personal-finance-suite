@@ -2,7 +2,8 @@ import { cn } from "../../lib/utils";
 import { ChevronDown, ChevronUp, Check } from "lucide-react";
 import { useState } from "react";
 
-const fmt = (n) => "£" + Math.round(n).toLocaleString("en-GB");
+import { fmtMoney } from "../../lib/ukTax";
+const fmt = fmtMoney;
 
 function SidebarRow({ label, value, accent, muted }) {
   return (

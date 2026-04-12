@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { cn } from "../../lib/utils";
-import { toMonthly } from "../../lib/ukTax";
+import { toMonthly, fmtMoney } from "../../lib/ukTax";
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip as ChartTooltip, Legend } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import Tip from "../Tip";
@@ -11,7 +11,7 @@ import { Edit2, RotateCcw, Save } from "lucide-react";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ChartTooltip, Legend);
 
-const fmt = (n) => "£" + Math.round(n).toLocaleString("en-GB");
+const fmt = fmtMoney;
 
 function RingGauge({ label, actual, target, isMin }) {
   const pct = Math.min(actual, 100);
