@@ -7,7 +7,7 @@ import { cn } from "../../lib/utils";
 import { toMonthly, FREQUENCY_OPTIONS, fmtMoney, fmtInputValue, evalFormula } from "../../lib/ukTax";
 import { Chart as ChartJS, ArcElement, Tooltip as ChartTooltip, Legend } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
-import { Edit2, Save, Plus, X, FolderOpen, Settings2 } from "lucide-react";
+import { Edit2, Save, Plus, X, FolderOpen, Settings2, Download } from "lucide-react";
 
 ChartJS.register(ArcElement, ChartTooltip, Legend);
 
@@ -19,9 +19,9 @@ function effectiveMonthly(item) {
   return monthly;
 }
 
-// ── Ring gauge (compact) ──
+// ── Ring gauge (card tile) ──
 
-function RingGauge({ label, actual, target, isMin, amount }) {
+function RingGauge({ label, actual, target, isMin, amount, targetAmount, accentColor, bgClass, borderClass, labelClass }) {
   const pct = Math.min(actual, 100);
   const onTarget = isMin ? actual >= target : actual <= target;
   const close = isMin ? actual >= target - 5 : actual <= target + 5;
@@ -31,12 +31,13 @@ function RingGauge({ label, actual, target, isMin, amount }) {
   const offset = circumference - (pct / 100) * circumference;
 
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div className={cn("flex flex-col items-center gap-2 rounded-xl border px-4 py-3 flex-1 min-w-[100px]", bgClass, borderClass)}>
+      <p className={cn("text-[10px] font-bold uppercase tracking-widest", labelClass)}>{label}</p>
       <div className="relative w-16 h-16">
         <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-          <circle cx="50" cy="50" r="36" fill="none" strokeWidth="7" className="stroke-muted" />
+          <circle cx="50" cy="50" r="36" fill="none" strokeWidth="8" className="stroke-muted/60" />
           <circle
-            cx="50" cy="50" r="36" fill="none" strokeWidth="7"
+            cx="50" cy="50" r="36" fill="none" strokeWidth="8"
             className={cn(stroke, "transition-all duration-500")}
             strokeLinecap="round"
             strokeDasharray={circumference}
@@ -47,10 +48,14 @@ function RingGauge({ label, actual, target, isMin, amount }) {
           <span className={cn("text-sm font-bold tabular-nums", color)}>{actual.toFixed(0)}%</span>
         </div>
       </div>
-      <p className="text-[10px] font-medium text-muted-foreground">{label} {isMin ? "≥" : "≤"}{target}%</p>
-      {amount !== undefined && (
-        <p className="text-[10px] tabular-nums text-muted-foreground">{fmt(amount)}</p>
-      )}
+      <div className="flex flex-col items-center gap-0.5">
+        {amount !== undefined && (
+          <p className="text-xs font-semibold tabular-nums text-foreground">{fmt(amount)}</p>
+        )}
+        <p className="text-[10px] tabular-nums text-muted-foreground">
+          {isMin ? "≥" : "≤"}{target}% · {targetAmount !== undefined ? fmt(targetAmount) : ""}
+        </p>
+      </div>
     </div>
   );
 }
@@ -228,12 +233,12 @@ function EditDialog({ title, color, items, grouped, onChange, onClose }) {
 
 // ── Read-only category card ──
 
-function CategoryCard({ title, color, items, total, onEdit, children }) {
+function CategoryCard({ title, color, accent, items, total, onEdit, children }) {
   const filledItems = items ? items.filter((i) => i.amount > 0) : [];
   const hasItems = filledItems.length > 0;
 
   return (
-    <Card className={cn("break-inside-avoid", onEdit && "cursor-pointer hover:border-brand/40 transition-colors")} onClick={onEdit}>
+    <Card className={cn("break-inside-avoid border-l-2", accent, onEdit && "cursor-pointer hover:border-brand/40 transition-colors")} onClick={onEdit}>
       <div className="flex items-center justify-between p-4 pb-2">
         <div className="flex items-center gap-2">
           <div className={cn("w-2 h-2 rounded-full", color)} />
@@ -285,7 +290,7 @@ function CommittedCard({ items, total, onEdit }) {
   const hasItems = Object.keys(groupedFilled).length > 0;
 
   return (
-    <Card className="break-inside-avoid cursor-pointer hover:border-brand/40 transition-colors" onClick={onEdit}>
+    <Card className="break-inside-avoid border-l-2 border-l-orange-500 cursor-pointer hover:border-brand/40 transition-colors" onClick={onEdit}>
       <div className="flex items-center justify-between p-4 pb-2">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-brand" />
@@ -327,6 +332,111 @@ const PIE_COLORS = [
   "hsl(0, 60%, 55%)",    // red
   "hsl(220, 50%, 60%)",  // slate blue
 ];
+
+// ── CSV export ──
+
+function exportBudgetCSV(budget, budgetName) {
+  const rows = [];
+  const takeHome = budget.income.monthlyTakeHome;
+  const committed = budget.committedTotal;
+  const essentials = budget.essentialsTotal;
+  const savings = budget.savingsTotal;
+  const lifestyle = budget.lifestyleTotal;
+  const totalOutgoings = committed + essentials + savings + lifestyle;
+  const unallocated = Math.round((takeHome - totalOutgoings) * 100) / 100;
+  const budgetRule = budget.budgetRule || { needs: 50, wants: 30, savings: 20 };
+
+  const needsPct = takeHome > 0 ? ((committed + essentials) / takeHome) * 100 : 0;
+  const wantsPct = takeHome > 0 ? (lifestyle / takeHome) * 100 : 0;
+  const savingsPct = takeHome > 0 ? (savings / takeHome) * 100 : 0;
+  const needsTarget = takeHome * budgetRule.needs / 100;
+  const wantsTarget = takeHome * budgetRule.wants / 100;
+  const savingsTarget = takeHome * budgetRule.savings / 100;
+
+  const cell = (v) => (typeof v === "string" && v.includes(",")) ? `"${v}"` : String(v ?? "");
+  const row = (...cols) => rows.push(cols.map(cell).join(","));
+  const blank = () => rows.push("");
+  const header = (title) => { blank(); row(title); row("─".repeat(title.length)); };
+
+  row(`BUDGET: ${budgetName || "Untitled"}`, "", "", `Exported: ${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`);
+  blank();
+
+  // Summary
+  header("SUMMARY");
+  row("Take-home", fmt(takeHome) + "/mo");
+  row("Total outgoings", fmt(totalOutgoings) + "/mo");
+  row("Unallocated", fmt(unallocated) + "/mo");
+  row("Daily spend", "£" + ((takeHome - committed - essentials - savings) / 30).toFixed(2));
+  blank();
+
+  // Budget rule
+  header(`BUDGET RULE  (${budgetRule.needs} / ${budgetRule.wants} / ${budgetRule.savings})`);
+  row("", "Target %", "Actual %", "Actual £/mo", "Target £/mo", "Status");
+  row("Needs",   budgetRule.needs  + "%", needsPct.toFixed(1)  + "%", fmt(committed + essentials), fmt(needsTarget),  needsPct  <= budgetRule.needs  ? "✓ On track" : "✗ Over");
+  row("Wants",   budgetRule.wants  + "%", wantsPct.toFixed(1)  + "%", fmt(lifestyle),               fmt(wantsTarget),  wantsPct  <= budgetRule.wants  ? "✓ On track" : "✗ Over");
+  row("Savings", budgetRule.savings + "%", savingsPct.toFixed(1) + "%", fmt(savings),               fmt(savingsTarget), savingsPct >= budgetRule.savings ? "✓ On track" : "✗ Under");
+  blank();
+
+  // Income
+  header("INCOME");
+  if (budget.income.mode === "manual") {
+    row("Manual take-home", fmt(takeHome) + "/mo");
+  } else {
+    row("Gross annual", fmt(budget.income.grossAnnual) + "/yr");
+    if (budget.income.pensionPct > 0) row("Pension contribution", budget.income.pensionPct + "%");
+    if (budget.income.studentLoan !== "none") row("Student loan", budget.income.studentLoan.replace("plan", "Plan "));
+    row("Net take-home", fmt(takeHome) + "/mo");
+  }
+  blank();
+
+  // Committed
+  header(`COMMITTED  (${fmt(committed)}/mo)`);
+  row("Category", "Item", "Amount", "Frequency", "Monthly");
+  budget.committed.forEach((item) => {
+    const monthly = toMonthly(item.amount, item.frequency);
+    if (monthly > 0) row(item.category || "", item.name, fmt(item.amount), item.frequency, fmt(monthly));
+  });
+  row("", "TOTAL", "", "", fmt(committed));
+  blank();
+
+  // Essentials
+  header(`ESSENTIALS  (${fmt(essentials)}/mo)`);
+  row("Item", "Amount", "Frequency", "Monthly");
+  budget.essentials.forEach((item) => {
+    const monthly = toMonthly(item.amount, item.frequency);
+    if (monthly > 0) row(item.name, fmt(item.amount), item.frequency, fmt(monthly));
+  });
+  row("TOTAL", "", "", fmt(essentials));
+  blank();
+
+  // Savings
+  header(`SAVINGS  (${fmt(savings)}/mo)`);
+  row("Item", "Amount", "Frequency", "Monthly", "Annual");
+  budget.savings.forEach((item) => {
+    const monthly = toMonthly(item.amount, item.frequency);
+    if (monthly > 0) row(item.name, fmt(item.amount), item.frequency, fmt(monthly), fmt(monthly * 12));
+  });
+  row("TOTAL", "", "", fmt(savings), fmt(savings * 12));
+  blank();
+
+  // Lifestyle / Wants
+  header(`LIFESTYLE / WANTS  (${fmt(lifestyle)}/mo)`);
+  row("Item", "Amount", "Frequency", "Monthly");
+  budget.discretionary.forEach((item) => {
+    const monthly = toMonthly(item.amount, item.frequency);
+    if (monthly > 0) row(item.name, fmt(item.amount), item.frequency, fmt(monthly));
+  });
+  row("TOTAL", "", "", fmt(lifestyle));
+
+  const csv = rows.join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(budgetName || "budget").replace(/[^a-z0-9]/gi, "_")}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 // ── Main overview ──
 
@@ -480,15 +590,16 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
             <Settings2 size={14} />
             Settings
           </Button>
+          <Button variant="outline" size="sm" onClick={() => exportBudgetCSV(budget, budgetName)} className="gap-1.5">
+            <Download size={13} />
+            Export
+          </Button>
+          <div className="w-px h-5 bg-border" />
+          <Button variant="outline" size="sm" onClick={onReset} className="gap-1.5">
+            <Plus size={13} />
+            New
+          </Button>
         </div>
-      </div>
-
-      {/* New budget button — centred */}
-      <div className="flex justify-center">
-        <Button variant="brand" size="lg" onClick={onReset} className="gap-2 bg-foreground hover:bg-foreground/90 text-background px-8">
-          <Plus size={16} />
-          New Budget
-        </Button>
       </div>
 
       {/* Summary strip */}
@@ -522,10 +633,22 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
       <Card>
         <CardContent className="py-4 px-5">
           <div className="flex flex-wrap items-start gap-6">
-            <div className="flex gap-5">
-              <RingGauge label="Needs" actual={needsPct} target={budgetRule.needs} isMin={false} amount={committed + essentials} />
-              <RingGauge label="Wants" actual={wantsPct} target={budgetRule.wants} isMin={false} amount={lifestyle} />
-              <RingGauge label="Savings" actual={savingsPct} target={budgetRule.savings} isMin={true} amount={savings} />
+            <div className="flex gap-3">
+              <RingGauge
+                label="Needs" actual={needsPct} target={budgetRule.needs} isMin={false}
+                amount={committed + essentials} targetAmount={needsTarget}
+                bgClass="bg-orange-500/5" borderClass="border-orange-500/25" labelClass="text-orange-600 dark:text-orange-400"
+              />
+              <RingGauge
+                label="Wants" actual={wantsPct} target={budgetRule.wants} isMin={false}
+                amount={lifestyle} targetAmount={wantsTarget}
+                bgClass="bg-purple-500/5" borderClass="border-purple-500/25" labelClass="text-purple-600 dark:text-purple-400"
+              />
+              <RingGauge
+                label="Savings" actual={savingsPct} target={budgetRule.savings} isMin={true}
+                amount={savings} targetAmount={savingsTarget}
+                bgClass="bg-blue-500/5" borderClass="border-blue-500/25" labelClass="text-blue-600 dark:text-blue-400"
+              />
             </div>
             <div className="hidden sm:block w-px bg-border self-stretch" />
             <div className="flex flex-wrap gap-x-6 gap-y-2 flex-1 min-w-0">
@@ -545,11 +668,9 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
                   <p className="text-xs tabular-nums">5yr: {fmt(compound(savings, 5))} · 10yr: {fmt(compound(savings, 10))}</p>
                 </div>
               )}
-              <div className="w-full max-w-xs">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Budget rule</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {budgetRule.needs}/{budgetRule.wants}/{budgetRule.savings} — Needs {fmt(needsTarget)} · Wants {fmt(wantsTarget)} · Savings {fmt(savingsTarget)}
-                </p>
+              <div>
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Rule</p>
+                <p className="text-sm font-bold tabular-nums">{budgetRule.needs}/{budgetRule.wants}/{budgetRule.savings}</p>
               </div>
             </div>
           </div>
@@ -559,7 +680,7 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
       {/* Category cards — masonry layout */}
       <div className="columns-1 md:columns-2 xl:columns-3 gap-4 space-y-4">
         {/* Income (read-only) */}
-        <Card className="break-inside-avoid">
+        <Card className="break-inside-avoid border-l-2 border-l-green-500">
           <div className="flex items-center justify-between p-4 pb-2">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-success" />
@@ -591,11 +712,11 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
 
         <CommittedCard items={budget.committed} total={committed} onEdit={() => setEditingCategory("committed")} />
 
-        <CategoryCard title="Essentials" color="bg-warning" items={budget.essentials} total={essentials} onEdit={() => setEditingCategory("essentials")} />
+        <CategoryCard title="Essentials" color="bg-warning" accent="border-l-orange-400" items={budget.essentials} total={essentials} onEdit={() => setEditingCategory("essentials")} />
 
-        <CategoryCard title="Savings" color="bg-blue-500" items={budget.savings} total={savings} onEdit={() => setEditingCategory("savings")} />
+        <CategoryCard title="Savings" color="bg-blue-500" accent="border-l-blue-500" items={budget.savings} total={savings} onEdit={() => setEditingCategory("savings")} />
 
-        <CategoryCard title="Lifestyle" color="bg-purple-500" items={budget.discretionary} total={lifestyle} onEdit={() => setEditingCategory("lifestyle")} />
+        <CategoryCard title="Lifestyle" color="bg-purple-500" accent="border-l-purple-500" items={budget.discretionary} total={lifestyle} onEdit={() => setEditingCategory("lifestyle")} />
       </div>
 
       {/* Cash flow pie charts */}
