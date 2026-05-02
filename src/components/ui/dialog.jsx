@@ -22,7 +22,7 @@ export function Dialog({ open, onClose, children, className }) {
       {/* Panel */}
       <div
         className={cn(
-          "relative z-10 w-full max-h-[90vh] overflow-auto",
+          "relative z-10 w-full max-w-lg max-h-[90vh] overflow-auto",
           "bg-card border border-border rounded-2xl shadow-xl",
           "animate-fade-in",
           className

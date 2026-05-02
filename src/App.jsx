@@ -11,17 +11,18 @@ import { Select } from "./components/ui/select";
 import { cn } from "./lib/utils";
 import {
   ListFilter, User, LogOut,
-  BarChart2, Home, Map, Calculator, Layers, Wallet, PiggyBank
+  BarChart2, Home, Map, Calculator, Layers, Wallet, PiggyBank, LineChart
 } from "lucide-react";
 
 const modules = [
-  { key: "gaffTracker",    label: "Properties",    path: "/gaff",    icon: Home },
-  { key: "comparison",     label: "Comparison",    path: "/compare", icon: Layers },
-  { key: "mapView",        label: "Map",           path: "/map",     icon: Map },
-  { key: "buyVsRent",      label: "Buy Scenario",  path: "/",        icon: Calculator,  wip: true },
-  { key: "sandbox",        label: "Rent vs Buy",   path: "/sandbox", icon: BarChart2,   wip: true },
-  { key: "financeTracker", label: "Budget Tracker",path: "/finance", icon: Wallet,      wip: true },
-  { key: "budgetDesigner", label: "Budget Designer",path: "/budget", icon: PiggyBank },
+  { key: "gaffTracker",       label: "Properties",        path: "/gaff",               icon: Home },
+  { key: "comparison",        label: "Comparison",        path: "/compare",            icon: Layers },
+  { key: "mapView",           label: "Map",               path: "/map",                icon: Map },
+  { key: "buyVsRent",         label: "Buy Scenario",      path: "/",                   icon: Calculator,  wip: true },
+  { key: "sandbox",           label: "Rent vs Buy",       path: "/sandbox",            icon: BarChart2,   wip: true },
+  { key: "financeTracker",    label: "Budget Tracker",    path: "/finance",            icon: Wallet,      wip: true },
+  { key: "budgetDesigner",    label: "Budget Designer",   path: "/budget",             icon: PiggyBank },
+  { key: "portfolioStrategy", label: "Portfolio Strategy",path: "/portfolio-strategy", icon: LineChart },
 ];
 
 export default function App() {
@@ -50,7 +51,7 @@ export default function App() {
   };
 
   const currentPath = location.pathname;
-  const isFullWidth = currentPath === "/map" || currentPath === "/compare" || currentPath === "/sandbox" || currentPath === "/budget";
+  const isFullWidth = currentPath === "/map" || currentPath === "/compare" || currentPath === "/sandbox" || currentPath === "/budget" || currentPath.startsWith("/portfolio-strategy");
 
   const avatarUrl = auth.user ? getAvatarUrl(auth.user) : null;
   const avatarInitial = auth.user
@@ -137,7 +138,9 @@ export default function App() {
         {/* ── Navigation tabs ── */}
         <nav className="flex overflow-x-auto scrollbar-thin px-4 sm:px-6 border-t border-border">
           {modules.map((m) => {
-            const isActive = m.path === currentPath || (m.path === "/" && currentPath === "");
+            const isActive =
+              (m.path === "/" && (currentPath === "/" || currentPath === "")) ||
+              (m.path !== "/" && (currentPath === m.path || currentPath.startsWith(m.path + "/")));
             const Icon = m.icon;
             return (
               <button
