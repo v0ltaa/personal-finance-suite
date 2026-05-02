@@ -94,7 +94,7 @@ function DonutChart({ holdings, target }) {
       value: Number(h.weight) || 0,
       fill: CHART_COLORS[i % CHART_COLORS.length],
     })),
-    ...(unallocated > 0 ? [{ name: "Unallocated", value: unallocated, fill: UNALLOCATED_COLOR }] : []),
+    ...(unallocated > 0 ? [{ name: "Cash", value: unallocated, fill: UNALLOCATED_COLOR }] : []),
   ];
 
   if (data.length === 0 || data.every((d) => d.value === 0)) {
@@ -571,7 +571,7 @@ function TotalPortfolioSection({ holdings, activeMode, totalCapital, displayCurr
     { name: activeStratDef?.label,  value: activeTotal, fill: activeStratDef?.color || "#f4a636" },
   ].filter((d) => d.value > 0);
   const unallocated = Math.max(0, 100 - totalAllocated);
-  if (unallocated > 0.01) donutData.push({ name: "Unallocated", value: unallocated, fill: UNALLOCATED_COLOR });
+  if (unallocated > 0.01) donutData.push({ name: "Cash", value: unallocated, fill: UNALLOCATED_COLOR });
 
   const fmt = (pct) => totalCapital
     ? `${sym}${Math.round((totalCapital * pct) / 100).toLocaleString("en-GB")}`
@@ -734,17 +734,33 @@ function StrategySection({ stratDef, holdings, target, stocks, onAddHolding, onR
         <DonutChart holdings={holdings} target={target} />
 
         <div className="px-4 pb-1">
-          {holdings.length === 0 ? (
+          {holdings.length === 0 && total < target - 0.01 ? (
             <p className="text-xs text-muted-foreground/60 italic py-2 text-center">No positions yet</p>
           ) : (
-            holdings.map((h) => (
-              <HoldingRow
-                key={h.id} holding={h} strategy={stratDef.key}
-                stock={stockMap[h.ticker]}
-                onEdit={setEditHolding} onStockClick={onStockClick}
-                totalCapital={totalCapital} displayCurrency={displayCurrency}
-              />
-            ))
+            <>
+              {holdings.map((h) => (
+                <HoldingRow
+                  key={h.id} holding={h} strategy={stratDef.key}
+                  stock={stockMap[h.ticker]}
+                  onEdit={setEditHolding} onStockClick={onStockClick}
+                  totalCapital={totalCapital} displayCurrency={displayCurrency}
+                />
+              ))}
+              {target - total > 0.01 && (
+                <div className="flex items-center gap-2 py-2 border-b border-border/50 last:border-0">
+                  <span className="font-mono text-sm font-bold text-muted-foreground/40 tracking-tight">Cash</span>
+                  <span className="flex-1" />
+                  <div className="flex flex-col items-end gap-0.5 shrink-0">
+                    <span className="text-xs font-medium text-muted-foreground/40 tabular-nums">{(target - total).toFixed(1)}%</span>
+                    {totalCapital && (
+                      <span className="text-[10px] text-muted-foreground/30 tabular-nums">
+                        {fmtMoney((totalCapital * (target - total)) / 100, displayCurrency)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
