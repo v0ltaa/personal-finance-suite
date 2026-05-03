@@ -10,9 +10,10 @@ const usePortfolioStore = create((set) => ({
   // ── FactSheet Modal (global, no prop-drilling) ──
   factSheetStock: null,
   factSheetOnRemove: null,
-  openFactSheet: (stock, { onRemove } = {}) =>
-    set({ factSheetStock: stock, factSheetOnRemove: onRemove ?? null }),
-  closeFactSheet: () => set({ factSheetStock: null, factSheetOnRemove: null }),
+  factSheetEditMode: false,
+  openFactSheet: (stock, { onRemove, editMode } = {}) =>
+    set({ factSheetStock: stock, factSheetOnRemove: onRemove ?? null, factSheetEditMode: editMode ?? false }),
+  closeFactSheet: () => set({ factSheetStock: null, factSheetOnRemove: null, factSheetEditMode: false }),
   updateFactSheetStock: (id, patch) =>
     set((s) =>
       s.factSheetStock?.id === id

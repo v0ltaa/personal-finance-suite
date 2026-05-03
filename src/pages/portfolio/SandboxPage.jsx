@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "react-hot-toast";
 import {
   Plus, Save, Rocket, Trash2, Search, Sparkles, RefreshCw,
-  LayoutGrid, X, AlertTriangle, BarChart3, Info,
+  LayoutGrid, X, AlertTriangle, BarChart3, Info, Copy,
 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { Button } from "../../components/ui/button";
@@ -119,7 +120,9 @@ function NewSandboxModal({ open, onClose, onCreate }) {
 function StockPicker({ stocks, existingTickers, onAdd, placeholder = "Search & add stock…" }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [dropPos, setDropPos] = useState(null);
+  const inputRef = useRef(null);
+  const listRef = useRef(null);
 
   const available = stocks.filter((s) => {
     if (existingTickers.has(s.ticker)) return false;
@@ -129,21 +132,36 @@ function StockPicker({ stocks, existingTickers, onAdd, placeholder = "Search & a
   });
 
   useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    if (!open) return;
+    const handler = (e) => {
+      if (
+        (!inputRef.current || !inputRef.current.contains(e.target)) &&
+        (!listRef.current || !listRef.current.contains(e.target))
+      ) setOpen(false);
+    };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  }, [open]);
+
+  const openDropdown = () => {
+    const rect = inputRef.current?.getBoundingClientRect();
+    if (rect) setDropPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    setOpen(true);
+  };
 
   const handleAdd = (stock) => { onAdd(stock); setQuery(""); setOpen(false); };
 
+  const showList = open && dropPos && (available.length > 0 || query);
+
   return (
-    <div ref={ref} className="relative">
+    <div className="relative">
       <div className="relative">
         <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         <input
+          ref={inputRef}
           value={query}
-          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)}
+          onChange={(e) => { setQuery(e.target.value); openDropdown(); }}
+          onFocus={openDropdown}
           placeholder={placeholder}
           className={cn(
             "w-full h-8 rounded-lg border border-input bg-background pl-8 pr-3 py-2",
@@ -152,9 +170,13 @@ function StockPicker({ stocks, existingTickers, onAdd, placeholder = "Search & a
           )}
         />
       </div>
-      {open && available.length > 0 && (
-        <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-card border border-border rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
-          {available.map((s) => (
+      {showList && createPortal(
+        <div
+          ref={listRef}
+          style={{ position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width, zIndex: 9999 }}
+          className="bg-card border border-border rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto"
+        >
+          {available.length > 0 ? available.map((s) => (
             <button key={s.id} onMouseDown={() => handleAdd(s)}
               className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-muted transition-colors">
               <span className="font-mono font-bold w-12 shrink-0 text-foreground">{s.ticker}</span>
@@ -165,13 +187,11 @@ function StockPicker({ stocks, existingTickers, onAdd, placeholder = "Search & a
                 </Badge>
               )}
             </button>
-          ))}
-        </div>
-      )}
-      {open && available.length === 0 && query && (
-        <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-card border border-border rounded-xl shadow-xl px-3 py-2 text-xs text-muted-foreground">
-          No matching stocks in library.
-        </div>
+          )) : (
+            <div className="px-3 py-2 text-xs text-muted-foreground">No matching stocks in library.</div>
+          )}
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -244,7 +264,7 @@ function SandboxSection({ stratDef, holdings, allStocks, existingTickers, onAddS
   const overSection = total > 100.01;
 
   return (
-    <div className={cn("bg-card border border-border rounded-xl overflow-hidden", stratDef.accentClass)}>
+    <div className={cn("bg-card border border-border rounded-xl", stratDef.accentClass)}>
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-center gap-2 flex-wrap">
           <h3 className="text-sm font-semibold text-foreground">{stratDef.label}</h3>
@@ -616,6 +636,26 @@ export default function SandboxPage() {
     toast.success("Sandbox deleted.");
   };
 
+  const handleClone = async (sb, e) => {
+    e.stopPropagation();
+    const cloned = {
+      id: crypto.randomUUID(),
+      name: sb.name + " (Copy)",
+      holdings: (sb.holdings || []).map((h) => ({ ...h })),
+      correlations: { ...(sb.correlations || {}) },
+    };
+    const { data, error } = await upsertSandbox({
+      id: cloned.id, name: cloned.name,
+      holdings: cloned.holdings, correlations: cloned.correlations,
+    });
+    if (error) { toast.error("Failed to clone: " + error.message); return; }
+    if (data) {
+      saveSandboxStore(data);
+      setActiveSandbox({ id: data.id, name: data.name, holdings: data.holdings || [], correlations: data.correlations || {} });
+      toast.success(`Cloned to "${data.name}".`);
+    }
+  };
+
   // ── Holdings mutations ──
 
   const addStockToSandbox = (stock, sectionKey) => {
@@ -780,12 +820,21 @@ export default function SandboxPage() {
                 <span className={cn("text-xs flex-1 truncate", activeSandbox?.id === sb.id ? "text-brand font-medium" : "text-foreground")}>
                   {sb.name}
                 </span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteSandbox(sb); }}
-                  className="opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-danger transition-all"
-                >
-                  <X size={11} />
-                </button>
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                  <button
+                    onClick={(e) => handleClone(sb, e)}
+                    title="Clone sandbox"
+                    className="text-muted-foreground/40 hover:text-brand transition-colors p-0.5"
+                  >
+                    <Copy size={10} />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteSandbox(sb); }}
+                    className="text-muted-foreground/40 hover:text-danger transition-colors p-0.5"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
               </div>
             ))}
           </>

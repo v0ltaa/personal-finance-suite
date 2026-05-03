@@ -19,6 +19,7 @@ export default function PortfolioLayout() {
   const {
     factSheetStock,
     factSheetOnRemove,
+    factSheetEditMode,
     closeFactSheet,
     updateStockInStore,
     updateFactSheetStock,
@@ -27,6 +28,11 @@ export default function PortfolioLayout() {
   const handleNotesSaved = (id, notes) => {
     updateStockInStore(id, { notes });
     updateFactSheetStock(id, { notes });
+  };
+
+  const handleFactSheetSaved = (id, factSheet, notes) => {
+    updateStockInStore(id, { fact_sheet: factSheet, notes });
+    updateFactSheetStock(id, { fact_sheet: factSheet, notes });
   };
 
   const handleRemove = factSheetOnRemove
@@ -77,6 +83,8 @@ export default function PortfolioLayout() {
           onClose={closeFactSheet}
           onRemove={handleRemove}
           onNotesSaved={handleNotesSaved}
+          onFactSheetSaved={handleFactSheetSaved}
+          initialEditMode={factSheetEditMode}
         />
       )}
 
