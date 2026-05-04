@@ -2,8 +2,10 @@ import { useState, useEffect } from "react";
 import { toast } from "react-hot-toast";
 import {
   Plus, Info, Trash2, AlertTriangle,
-  AlertCircle, BarChart3, Briefcase, Settings,
+  AlertCircle, BarChart3, Briefcase, Settings, Maximize2, FileDown,
 } from "lucide-react";
+import PotExpandedModal from "../../components/portfolio/PotExpandedModal";
+import { exportPortfolioPdf } from "../../lib/pdfExport";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
@@ -157,8 +159,9 @@ function CountdownBar({ entryDate }) {
 
 // ── Edit Holding Dialog ────────────────────────────────────────────────────
 
-function EditHoldingDialog({ open, onClose, holding, strategy, totalCapital, displayCurrency, onSave, onDelete }) {
-  const [inputMode, setInputMode] = useState("pct");
+function EditHoldingDialog({ open, onClose, holding, strategy, target, totalCapital, displayCurrency, onSave, onDelete }) {
+  const isPot = true;
+  const [inputMode, setInputMode] = useState(isPot ? "pot" : "pct");
   const [weight, setWeight]     = useState("");
   const [amount, setAmount]     = useState("");
   const [entryDate, setEntryDate] = useState("");
@@ -166,21 +169,26 @@ function EditHoldingDialog({ open, onClose, holding, strategy, totalCapital, dis
   const [error, setError]       = useState("");
 
   const sym = currencySymbol(displayCurrency);
+  const stratDef = STRATEGIES.find((s) => s.key === strategy);
 
   useEffect(() => {
     if (open && holding) {
       const w = Number(holding.weight);
-      setWeight(w.toFixed(1));
+      const defaultMode = isPot ? "pot" : "pct";
+      setInputMode(defaultMode);
+      // In pot mode, display as % of pot; in pct mode display as portfolio %
+      setWeight(defaultMode === "pot" && target ? ((w / target) * 100).toFixed(1) : w.toFixed(1));
       setAmount(totalCapital ? String(Math.round((totalCapital * w) / 100)) : "");
       setEntryDate(holding.entry_date ? holding.entry_date.split("T")[0] : today());
-      setInputMode("pct");
       setError("");
     }
-  }, [open, holding, totalCapital]);
+  }, [open, holding, totalCapital, isPot, target]);
 
-  const computedWeight = inputMode === "amount" && totalCapital && amount
-    ? ((Number(amount) / totalCapital) * 100)
-    : null;
+  // Derived hints
+  const potPct   = inputMode === "pot"    && target        ? Number(weight)                          : null;
+  const portPct  = inputMode === "pot"    && target        ? (Number(weight) * target) / 100         : null;
+  const amtHint  = inputMode === "amount" && totalCapital && amount ? (Number(amount) / totalCapital) * 100 : null;
+  const potHint  = inputMode === "pct"    && target        ? (Number(weight) / target) * 100         : null;
 
   const handleSave = async () => {
     setError("");
@@ -188,6 +196,10 @@ function EditHoldingDialog({ open, onClose, holding, strategy, totalCapital, dis
     if (inputMode === "pct") {
       w = Number(weight);
       if (!w || w <= 0 || w > 100) { setError("Weight must be between 0.1 and 100."); return; }
+    } else if (inputMode === "pot") {
+      const pv = Number(weight);
+      if (!pv || pv <= 0 || pv > 100) { setError("Must be between 0.1 and 100% of pot."); return; }
+      w = (pv * target) / 100;
     } else {
       if (!totalCapital) { setError("Set total portfolio value in Settings first."); return; }
       const a = Number(amount);
@@ -218,31 +230,70 @@ function EditHoldingDialog({ open, onClose, holding, strategy, totalCapital, dis
       <DialogBody className="flex flex-col gap-4">
         {/* Mode toggle */}
         <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5 self-start">
-          {["pct", "amount"].map((m) => (
+          {isPot && (
             <button
-              key={m}
-              onClick={() => setInputMode(m)}
-              disabled={m === "amount" && !totalCapital}
+              onClick={() => {
+                // convert current value when switching modes
+                if (inputMode === "pct" && target) setWeight(((Number(weight) / target) * 100).toFixed(1));
+                if (inputMode === "amount" && totalCapital && amount) {
+                  const portW = (Number(amount) / totalCapital) * 100;
+                  setWeight(((portW / target) * 100).toFixed(1));
+                }
+                setInputMode("pot");
+              }}
               className={cn(
                 "px-3 py-1 rounded-md text-xs font-medium transition-all",
-                inputMode === m ? "bg-card text-foreground shadow-sm" : "text-muted-foreground",
-                m === "amount" && !totalCapital && "opacity-40 cursor-not-allowed"
+                inputMode === "pot" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
               )}
-              title={m === "amount" && !totalCapital ? "Set total portfolio value in Settings first" : undefined}
             >
-              {m === "pct" ? "Weight %" : `Amount (${sym})`}
+              % of {stratDef?.label}
             </button>
-          ))}
+          )}
+          <button
+            onClick={() => {
+              if (inputMode === "pot" && target) setWeight(((Number(weight) * target) / 100).toFixed(1));
+              setInputMode("pct");
+            }}
+            className={cn(
+              "px-3 py-1 rounded-md text-xs font-medium transition-all",
+              inputMode === "pct" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Portfolio %
+          </button>
+          <button
+            onClick={() => setInputMode("amount")}
+            disabled={!totalCapital}
+            className={cn(
+              "px-3 py-1 rounded-md text-xs font-medium transition-all",
+              inputMode === "amount" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground",
+              !totalCapital && "opacity-40 cursor-not-allowed"
+            )}
+            title={!totalCapital ? "Set total portfolio value in Settings first" : undefined}
+          >
+            Amount ({sym})
+          </button>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          {inputMode === "pct" ? (
-            <FormField label="Weight %" hint="As % of total portfolio">
+          {inputMode === "pot" ? (
+            <FormField
+              label={`% of ${stratDef?.label}`}
+              hint={portPct != null ? `= ${portPct.toFixed(1)}% of portfolio` : ""}
+            >
+              <Input type="number" min="0.1" max="100" step="0.1" value={weight}
+                onChange={(e) => setWeight(e.target.value)} />
+            </FormField>
+          ) : inputMode === "pct" ? (
+            <FormField
+              label="Portfolio %"
+              hint={isPot && potHint != null ? `= ${potHint.toFixed(1)}% of ${stratDef?.label} pot` : "As % of total portfolio"}
+            >
               <Input type="number" min="0.1" max="100" step="0.1" value={weight}
                 onChange={(e) => setWeight(e.target.value)} />
             </FormField>
           ) : (
-            <FormField label={`Amount (${sym})`} hint={computedWeight != null ? `≈ ${computedWeight.toFixed(1)}% of portfolio` : ""}>
+            <FormField label={`Amount (${sym})`} hint={amtHint != null ? `≈ ${amtHint.toFixed(1)}% of portfolio` : ""}>
               <Input type="number" min="1" step="100" value={amount}
                 onChange={(e) => setAmount(e.target.value)} />
             </FormField>
@@ -409,9 +460,10 @@ function SettingsModal({ open, onClose, totalCapital, onCapitalChange, buyHoldPc
 
 // ── Add Holding Modal ──────────────────────────────────────────────────────
 
-function AddHoldingModal({ open, onClose, strategy, stocks, existingTickers, onAdd, totalCapital, displayCurrency }) {
+function AddHoldingModal({ open, onClose, strategy, target, stocks, existingTickers, onAdd, totalCapital, displayCurrency }) {
+  const isPot = true;
   const [ticker, setTicker] = useState("");
-  const [inputMode, setInputMode] = useState("pct");
+  const [inputMode, setInputMode] = useState(isPot ? "pot" : "pct");
   const [weight, setWeight] = useState("");
   const [amount, setAmount] = useState("");
   const [entryDate, setEntryDate] = useState(today());
@@ -421,22 +473,27 @@ function AddHoldingModal({ open, onClose, strategy, stocks, existingTickers, onA
   useEffect(() => {
     if (open) {
       setTicker(""); setWeight(""); setAmount(""); setEntryDate(today());
-      setError(""); setSaving(false); setInputMode("pct");
+      setError(""); setSaving(false); setInputMode(isPot ? "pot" : "pct");
     }
-  }, [open]);
+  }, [open, isPot]);
 
   const stratDef = STRATEGIES.find((s) => s.key === strategy);
   const available = stocks.filter((s) => !existingTickers.has(s.ticker));
   const sym = currencySymbol(displayCurrency);
-  const computedWeight = inputMode === "amount" && totalCapital && amount
-    ? ((Number(amount) / totalCapital) * 100)
-    : null;
+
+  const portPct  = inputMode === "pot"    && target && weight ? (Number(weight) * target) / 100 : null;
+  const potHint  = inputMode === "pct"    && target && weight ? (Number(weight) / target) * 100  : null;
+  const amtHint  = inputMode === "amount" && totalCapital && amount ? (Number(amount) / totalCapital) * 100 : null;
 
   const handleAdd = async () => {
     setError("");
     if (!ticker) { setError("Select a stock."); return; }
     let w;
-    if (inputMode === "pct") {
+    if (inputMode === "pot") {
+      const pv = Number(weight);
+      if (!pv || pv <= 0 || pv > 100) { setError("Must be between 0.1 and 100% of pot."); return; }
+      w = (pv * target) / 100;
+    } else if (inputMode === "pct") {
       w = Number(weight);
       if (!w || w <= 0 || w > 100) { setError("Enter a weight between 0.1 and 100."); return; }
     } else {
@@ -487,14 +544,25 @@ function AddHoldingModal({ open, onClose, strategy, stocks, existingTickers, onA
 
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5 self-start">
+            {isPot && (
+              <button
+                onClick={() => setInputMode("pot")}
+                className={cn(
+                  "px-3 py-1 rounded-md text-xs font-medium transition-all",
+                  inputMode === "pot" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                % of {stratDef?.label}
+              </button>
+            )}
             <button
               onClick={() => setInputMode("pct")}
               className={cn(
                 "px-3 py-1 rounded-md text-xs font-medium transition-all",
-                inputMode === "pct" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+                inputMode === "pct" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              Weight %
+              Portfolio %
             </button>
             <button
               onClick={() => setInputMode("amount")}
@@ -511,13 +579,18 @@ function AddHoldingModal({ open, onClose, strategy, stocks, existingTickers, onA
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            {inputMode === "pct" ? (
-              <FormField label="Weight %" hint="As % of total portfolio">
+            {inputMode === "pot" ? (
+              <FormField label={`% of ${stratDef?.label}`} hint={portPct != null ? `= ${portPct.toFixed(1)}% of portfolio` : ""}>
+                <Input type="number" min="0.1" max="100" step="0.1" value={weight}
+                  onChange={(e) => setWeight(e.target.value)} placeholder="100" />
+              </FormField>
+            ) : inputMode === "pct" ? (
+              <FormField label="Portfolio %" hint={isPot && potHint != null ? `= ${potHint.toFixed(1)}% of ${stratDef?.label} pot` : "As % of total portfolio"}>
                 <Input type="number" min="0.1" max="100" step="0.1" value={weight}
                   onChange={(e) => setWeight(e.target.value)} placeholder="5.0" />
               </FormField>
             ) : (
-              <FormField label={`Amount (${sym})`} hint={computedWeight != null ? `≈ ${computedWeight.toFixed(1)}% of portfolio` : ""}>
+              <FormField label={`Amount (${sym})`} hint={amtHint != null ? `≈ ${amtHint.toFixed(1)}% of portfolio` : ""}>
                 <Input type="number" min="1" step="100" value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder={totalCapital ? `e.g. ${Math.round(totalCapital * 0.05)}` : "0"} />
@@ -547,44 +620,70 @@ function AddHoldingModal({ open, onClose, strategy, stocks, existingTickers, onA
 
 // ── Total Portfolio Section ────────────────────────────────────────────────
 
-function TotalPortfolioSection({ holdings, activeMode, totalCapital, displayCurrency }) {
-  const sym = currencySymbol(displayCurrency);
-  const activeStratDef = STRATEGIES.find((s) => s.key === activeMode);
+const VIEW_OPTS = [
+  { key: "fortress",  label: "Fortress",  short: "Fort.",  color: "#5aabcc" },
+  { key: "slingshot", label: "Slingshot", short: "Sling.", color: "#f4a636" },
+];
 
-  // Build merged rows: keyed by ticker, columns = bh + active mode
+function TotalPortfolioSection({ holdings, totalCapital, displayCurrency, activeMode }) {
+  const sym = currencySymbol(displayCurrency);
+  const [viewMode, setViewMode] = useState(activeMode === "fortress" ? "fortress" : "slingshot");
+
+  const viewDef = VIEW_OPTS.find((v) => v.key === viewMode);
+
+  // Build merged rows: B&H + viewMode only (math is correct for a single active pot)
   const tickerMap = {};
   (holdings.buy_and_hold || []).forEach((h) => {
     tickerMap[h.ticker] = { ticker: h.ticker, bh: h, active: null };
   });
-  (holdings[activeMode] || []).forEach((h) => {
+  (holdings[viewMode] || []).forEach((h) => {
     if (!tickerMap[h.ticker]) tickerMap[h.ticker] = { ticker: h.ticker, bh: null, active: null };
     tickerMap[h.ticker].active = h;
   });
   const rows = Object.values(tickerMap);
 
-  const bhTotal   = sumWeights(holdings.buy_and_hold || []);
-  const activeTotal = sumWeights(holdings[activeMode] || []);
+  const bhTotal     = sumWeights(holdings.buy_and_hold || []);
+  const activeTotal = sumWeights(holdings[viewMode]    || []);
   const totalAllocated = bhTotal + activeTotal;
 
   const donutData = [
-    { name: "Buy & Hold",           value: bhTotal,    fill: "#c4503a" },
-    { name: activeStratDef?.label,  value: activeTotal, fill: activeStratDef?.color || "#f4a636" },
+    { name: "Buy & Hold", value: bhTotal,     fill: "#c4503a" },
+    { name: viewDef?.label, value: activeTotal, fill: viewDef?.color },
   ].filter((d) => d.value > 0);
   const unallocated = Math.max(0, 100 - totalAllocated);
   if (unallocated > 0.01) donutData.push({ name: "Cash", value: unallocated, fill: UNALLOCATED_COLOR });
 
-  const fmt = (pct) => totalCapital
+  const fmtTotal = (pct) => totalCapital
     ? `${sym}${Math.round((totalCapital * pct) / 100).toLocaleString("en-GB")}`
     : `${pct.toFixed(1)}%`;
+  const fmtPct = (pct) => `${pct.toFixed(1)}%`;
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden border-l-[3px] border-l-foreground/20 flex flex-col">
       {/* Header */}
       <div className="px-4 pt-4 pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-foreground">Total Portfolio</h3>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="text-sm font-semibold text-foreground flex-1">Total Portfolio</h3>
+          {/* Toggle: which active pot to view */}
+          <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5">
+            {VIEW_OPTS.map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setViewMode(opt.key)}
+                className={cn(
+                  "px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all",
+                  viewMode === opt.key
+                    ? "bg-card shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                style={viewMode === opt.key ? { color: opt.color } : {}}
+              >
+                {opt.short}
+              </button>
+            ))}
+          </div>
           <Badge variant={totalAllocated > 100.01 ? "danger" : "muted"} className="text-[10px] font-mono">
-            {totalAllocated.toFixed(1)}% / 100%
+            {totalAllocated.toFixed(1)}%
           </Badge>
         </div>
         {totalCapital ? (
@@ -597,7 +696,7 @@ function TotalPortfolioSection({ holdings, activeMode, totalCapital, displayCurr
       </div>
 
       {/* Donut */}
-      {donutData.some((d) => d.name !== "Unallocated") ? (
+      {donutData.some((d) => d.value > 0 && d.name !== "Cash") ? (
         <ResponsiveContainer width="100%" height={110}>
           <PieChart>
             <Pie data={donutData} cx="50%" cy="50%" innerRadius={28} outerRadius={46}
@@ -622,7 +721,7 @@ function TotalPortfolioSection({ holdings, activeMode, totalCapital, displayCurr
         </div>
       )}
 
-      {/* Table */}
+      {/* Table — one row per ticker, B&H + active pot */}
       <div className="px-4 pb-4 flex-1">
         {rows.length === 0 ? (
           <p className="text-xs text-muted-foreground/60 italic py-2 text-center">No positions yet</p>
@@ -631,40 +730,39 @@ function TotalPortfolioSection({ holdings, activeMode, totalCapital, displayCurr
             <thead>
               <tr className="border-b border-border">
                 <th className="text-left pb-1.5 font-medium text-muted-foreground">Stock</th>
-                <th className="text-right pb-1.5 font-medium text-muted-foreground">B&H</th>
-                <th className="text-right pb-1.5 font-medium" style={{ color: activeStratDef?.color }}>
-                  {activeStratDef?.label}
+                <th className="text-right pb-1.5 font-medium" style={{ color: "#c4503a" }}>B&H</th>
+                <th className="text-right pb-1.5 font-medium" style={{ color: viewDef?.color }}>
+                  {viewDef?.short}
                 </th>
                 <th className="text-right pb-1.5 font-medium text-foreground">Total</th>
               </tr>
             </thead>
             <tbody>
               {rows.map(({ ticker, bh, active }) => {
-                const bhPct     = bh     ? Number(bh.weight)     : 0;
-                const activePct = active ? Number(active.weight) : 0;
-                const totalPct  = bhPct + activePct;
+                const bhPct  = bh     ? Number(bh.weight)     : 0;
+                const actPct = active ? Number(active.weight) : 0;
+                const totPct = bhPct + actPct;
                 return (
                   <tr key={ticker} className="border-b border-border/40 last:border-0">
-                    <td className="py-2 font-mono font-bold text-foreground">{ticker}</td>
-                    <td className="py-2 text-right tabular-nums text-muted-foreground">
-                      {bhPct > 0 ? fmt(bhPct) : <span className="opacity-30">—</span>}
+                    <td className="py-1.5 font-mono font-bold text-foreground">{ticker}</td>
+                    <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                      {bhPct  > 0 ? fmtPct(bhPct)  : <span className="opacity-25">—</span>}
                     </td>
-                    <td className="py-2 text-right tabular-nums text-muted-foreground">
-                      {activePct > 0 ? fmt(activePct) : <span className="opacity-30">—</span>}
+                    <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                      {actPct > 0 ? fmtPct(actPct) : <span className="opacity-25">—</span>}
                     </td>
-                    <td className="py-2 text-right tabular-nums font-semibold text-foreground">
-                      {fmt(totalPct)}
+                    <td className="py-1.5 text-right tabular-nums font-semibold text-foreground">
+                      {fmtTotal(totPct)}
                     </td>
                   </tr>
                 );
               })}
-              {/* Totals row */}
               {rows.length > 1 && (
                 <tr className="border-t-2 border-border">
                   <td className="pt-2 text-muted-foreground font-medium">Total</td>
-                  <td className="pt-2 text-right tabular-nums text-muted-foreground">{fmt(bhTotal)}</td>
-                  <td className="pt-2 text-right tabular-nums text-muted-foreground">{fmt(activeTotal)}</td>
-                  <td className="pt-2 text-right tabular-nums font-bold text-foreground">{fmt(totalAllocated)}</td>
+                  <td className="pt-2 text-right tabular-nums text-muted-foreground">{fmtPct(bhTotal)}</td>
+                  <td className="pt-2 text-right tabular-nums text-muted-foreground">{fmtPct(activeTotal)}</td>
+                  <td className="pt-2 text-right tabular-nums font-bold text-foreground">{fmtTotal(totalAllocated)}</td>
                 </tr>
               )}
             </tbody>
@@ -677,7 +775,7 @@ function TotalPortfolioSection({ holdings, activeMode, totalCapital, displayCurr
 
 // ── Strategy Section ───────────────────────────────────────────────────────
 
-function StrategySection({ stratDef, holdings, target, stocks, onAddHolding, onRemoveHolding, onUpdateWeight, onStockClick, isActive, totalCapital, displayCurrency }) {
+function StrategySection({ stratDef, holdings, target, stocks, onAddHolding, onRemoveHolding, onUpdateWeight, onStockClick, isActive, totalCapital, displayCurrency, onExpand }) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [addOpen, setAddOpen]         = useState(false);
   const [editHolding, setEditHolding] = useState(null);
@@ -721,6 +819,13 @@ function StrategySection({ stratDef, holdings, target, stocks, onAddHolding, onR
               <Badge variant={overAllocated ? "danger" : "muted"} className="ml-auto text-[10px] font-mono">
                 {total.toFixed(1)}% / {target}%
               </Badge>
+              <button
+                onClick={onExpand}
+                title="Expand analytics"
+                className="text-muted-foreground/50 hover:text-foreground transition-colors p-0.5 ml-1"
+              >
+                <Maximize2 size={12} />
+              </button>
             </div>
             {overAllocated && (
               <div className="flex items-center gap-1.5 mt-1.5 text-xs text-danger">
@@ -773,14 +878,14 @@ function StrategySection({ stratDef, holdings, target, stocks, onAddHolding, onR
 
       <AddHoldingModal
         open={addOpen} onClose={() => setAddOpen(false)}
-        strategy={stratDef.key} stocks={stocks}
+        strategy={stratDef.key} target={target} stocks={stocks}
         existingTickers={existingTickers} onAdd={onAddHolding}
         totalCapital={totalCapital} displayCurrency={displayCurrency}
       />
 
       <EditHoldingDialog
         open={!!editHolding} onClose={() => setEditHolding(null)}
-        holding={editHolding} strategy={stratDef.key}
+        holding={editHolding} strategy={stratDef.key} target={target}
         totalCapital={totalCapital} displayCurrency={displayCurrency}
         onSave={async (id, patch) => {
           await onUpdateWeight({ ...editHolding }, patch);
@@ -851,6 +956,7 @@ export default function PortfolioPage() {
   } = usePortfolioStore();
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [expandedStrategy, setExpandedStrategy] = useState(null);
 
   const [totalCapital, setTotalCapital] = useState(() =>
     Number(localStorage.getItem("pf_total_capital") || "0")
@@ -986,7 +1092,14 @@ export default function PortfolioPage() {
 
         {/* Summary + settings button */}
         <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-end">
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={() => exportPortfolioPdf({ holdings, stocks, totalCapital, activeMode, buyHoldPct, displayCurrency })}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-2.5 py-1.5 transition-colors"
+            >
+              <FileDown size={13} />
+              Export PDF
+            </button>
             <button
               onClick={() => setSettingsOpen(true)}
               className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-2.5 py-1.5 transition-colors"
@@ -1021,9 +1134,9 @@ export default function PortfolioPage() {
           <div className="w-full xl:w-72 shrink-0">
             <TotalPortfolioSection
               holdings={holdings}
-              activeMode={activeMode}
               totalCapital={totalCapital}
               displayCurrency={displayCurrency}
+              activeMode={activeMode}
             />
           </div>
 
@@ -1043,6 +1156,7 @@ export default function PortfolioPage() {
                 isActive={stratDef.key === "buy_and_hold" || stratDef.key === activeMode}
                 totalCapital={totalCapital}
                 displayCurrency={displayCurrency}
+                onExpand={() => setExpandedStrategy(stratDef.key)}
               />
             ))}
           </div>
@@ -1059,6 +1173,20 @@ export default function PortfolioPage() {
         displayCurrency={displayCurrency}
         onCurrencyChange={handleCurrencyChange}
       />
+
+      {expandedStrategy && (
+        <PotExpandedModal
+          open={true}
+          onClose={() => setExpandedStrategy(null)}
+          stratDef={STRATEGIES.find((s) => s.key === expandedStrategy)}
+          holdings={holdings[expandedStrategy] || []}
+          stocks={stocks}
+          target={strategyTargets[expandedStrategy]}
+          totalCapital={totalCapital}
+          displayCurrency={displayCurrency}
+          showEntryDate={true}
+        />
+      )}
     </div>
   );
 }
