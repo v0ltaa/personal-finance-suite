@@ -72,15 +72,40 @@ export async function deleteIndicatorEntry(id) {
 
 // ── Sandbox Portfolios ──
 
+function normalizeSandbox(sb) {
+  return {
+    ...sb,
+    potMode: sb.pot_mode ?? sb.potMode ?? "pot",
+    potAllocations: sb.pot_allocations ?? sb.potAllocations ?? { buy_and_hold: 40, fortress: 30, slingshot: 30 },
+  };
+}
+
 export async function fetchSandboxes() {
   if (!supabase) return { data: [], error: null };
-  return supabase.from("sandbox_portfolios").select("*").order("updated_at", { ascending: false });
+  const { data, error } = await supabase
+    .from("sandbox_portfolios")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  return { data: data ? data.map(normalizeSandbox) : data, error };
 }
 
 export async function upsertSandbox(sandbox) {
   if (!supabase) return NOT_CONFIGURED;
-  const payload = { ...sandbox, updated_at: new Date().toISOString() };
-  return supabase.from("sandbox_portfolios").upsert(payload, { onConflict: "id" }).select().single();
+  const payload = {
+    id: sandbox.id,
+    name: sandbox.name,
+    holdings: sandbox.holdings,
+    correlations: sandbox.correlations,
+    pot_mode: sandbox.potMode ?? "pot",
+    pot_allocations: sandbox.potAllocations,
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from("sandbox_portfolios")
+    .upsert(payload, { onConflict: "id" })
+    .select()
+    .single();
+  return { data: data ? normalizeSandbox(data) : data, error };
 }
 
 export async function deleteSandbox(id) {

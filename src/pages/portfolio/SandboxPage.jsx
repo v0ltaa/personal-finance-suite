@@ -3,8 +3,10 @@ import { createPortal } from "react-dom";
 import { toast } from "react-hot-toast";
 import {
   Plus, Save, Rocket, Trash2, Search, Sparkles, RefreshCw,
-  LayoutGrid, X, AlertTriangle, BarChart3, Info, Copy,
+  LayoutGrid, X, AlertTriangle, BarChart3, Info, Copy, Maximize2, FileDown, Settings,
 } from "lucide-react";
+import PotExpandedModal from "../../components/portfolio/PotExpandedModal";
+import { exportSandboxPdf } from "../../lib/pdfExport";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
@@ -14,6 +16,7 @@ import { cn } from "../../lib/utils";
 import usePortfolioStore from "../../stores/portfolioStore";
 import {
   fetchStocks, fetchSandboxes, upsertSandbox, deleteSandbox, insertHolding,
+  fetchHoldings, deleteHolding,
 } from "../../services/portfolioService";
 import { volatilityVariant } from "../../components/portfolio/FactSheetModal";
 import { currencySymbol, getDisplayCurrency } from "../../lib/currency";
@@ -48,7 +51,10 @@ function holdingsBySection(allHoldings) {
 
 function makePairKey(a, b) { return [a, b].sort().join("-"); }
 function today() { return new Date().toISOString().split("T")[0]; }
-function newSandbox(name) { return { id: crypto.randomUUID(), name, holdings: [], correlations: {} }; }
+function defaultPotAllocations() { return { buy_and_hold: 40, fortress: 30, slingshot: 30 }; }
+function newSandbox(name) {
+  return { id: crypto.randomUUID(), name, holdings: [], correlations: {}, potMode: "pot", potAllocations: defaultPotAllocations() };
+}
 
 // ── Donut Chart ────────────────────────────────────────────────────────────
 
@@ -217,7 +223,7 @@ function SandboxHoldingRow({ holding, stock, onWeightChange, onSectionChange, on
         {STRATEGIES.map((s) => (
           <button
             key={s.key}
-            onClick={() => onSectionChange(holding.ticker, s.key)}
+            onClick={() => onSectionChange(holding._hid, s.key)}
             title={s.label}
             className={cn(
               "w-2.5 h-2.5 rounded-full border-2 transition-all",
@@ -236,7 +242,7 @@ function SandboxHoldingRow({ holding, stock, onWeightChange, onSectionChange, on
         <input
           type="number" min={0} max={100} step={0.1}
           value={holding.weight}
-          onChange={(e) => onWeightChange(holding.ticker, e.target.value)}
+          onChange={(e) => onWeightChange(holding._hid, e.target.value)}
           className={cn(
             "w-16 h-7 rounded-md border border-input bg-background px-2",
             "text-xs font-mono text-right text-foreground",
@@ -247,7 +253,7 @@ function SandboxHoldingRow({ holding, stock, onWeightChange, onSectionChange, on
       </div>
 
       <button
-        onClick={() => onRemove(holding.ticker)}
+        onClick={() => onRemove(holding._hid)}
         className="text-muted-foreground/30 hover:text-danger transition-colors opacity-0 group-hover:opacity-100 shrink-0"
       >
         <Trash2 size={12} />
@@ -258,7 +264,7 @@ function SandboxHoldingRow({ holding, stock, onWeightChange, onSectionChange, on
 
 // ── Sandbox Section Card ───────────────────────────────────────────────────
 
-function SandboxSection({ stratDef, holdings, allStocks, existingTickers, onAddStock, onWeightChange, onSectionChange, onRemove, onStockClick }) {
+function SandboxSection({ stratDef, holdings, allStocks, existingTickers, onAddStock, onWeightChange, onSectionChange, onRemove, onStockClick, onExpand }) {
   const [showTooltip, setShowTooltip] = useState(false);
   const total = sumWeights(holdings);
   const overSection = total > 100.01;
@@ -282,6 +288,13 @@ function SandboxSection({ stratDef, holdings, allStocks, existingTickers, onAddS
           <Badge variant={overSection ? "danger" : "muted"} className="ml-auto text-[10px] font-mono">
             {total.toFixed(1)}%
           </Badge>
+          <button
+            onClick={onExpand}
+            title="Expand analytics"
+            className="text-muted-foreground/50 hover:text-foreground transition-colors p-0.5 ml-1"
+          >
+            <Maximize2 size={12} />
+          </button>
         </div>
         {overSection && (
           <div className="flex items-center gap-1.5 mt-1 text-xs text-danger">
@@ -319,27 +332,194 @@ function SandboxSection({ stratDef, holdings, allStocks, existingTickers, onAddS
   );
 }
 
+// ── Sandbox Settings Modal ────────────────────────────────────────────────
+
+function SandboxSettingsModal({ open, onClose, potMode, potAllocations, capital, displayCurrency, onChange }) {
+  const [mode, setMode] = useState(potMode);
+  const [allocs, setAllocs] = useState({ ...potAllocations });
+  const [cap, setCap] = useState(String(capital || ""));
+  const sym = currencySymbol(displayCurrency);
+
+  useEffect(() => {
+    if (open) { setMode(potMode); setAllocs({ ...potAllocations }); setCap(String(capital || "")); }
+  }, [open, potMode, potAllocations, capital]);
+
+  const total = (Number(allocs.buy_and_hold) || 0) + (Number(allocs.fortress) || 0) + (Number(allocs.slingshot) || 0);
+  const mismatch = Math.abs(total - 100) > 0.1;
+
+  const handleSave = () => {
+    onChange({
+      potMode: mode,
+      potAllocations: {
+        buy_and_hold: Number(allocs.buy_and_hold) || 0,
+        fortress: Number(allocs.fortress) || 0,
+        slingshot: Number(allocs.slingshot) || 0,
+      },
+      capital: Number(cap) || 0,
+    });
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose}>
+      <DialogHeader onClose={onClose}><DialogTitle>Sandbox Settings</DialogTitle></DialogHeader>
+      <DialogBody className="flex flex-col gap-5">
+
+        <FormField label="Portfolio Capital" hint="Used to show £ amounts alongside percentages">
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">{sym}</span>
+            <Input
+              type="number" min={0} step={1000}
+              value={cap}
+              onChange={(e) => setCap(e.target.value)}
+              placeholder="e.g. 50000"
+              className="pl-7"
+            />
+          </div>
+        </FormField>
+
+        <FormField label="Weight Mode" hint="How the % you type in each section is interpreted">
+          <div className="flex gap-1 bg-muted rounded-lg p-0.5">
+            {[
+              { value: "pot",       label: "% of Pot",       hint: "Each section sums to 100% independently" },
+              { value: "portfolio", label: "% of Portfolio",  hint: "Weights are direct portfolio percentages" },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setMode(opt.value)}
+                title={opt.hint}
+                className={cn(
+                  "flex-1 py-1.5 rounded-md text-xs font-medium transition-all",
+                  mode === opt.value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </FormField>
+
+        {mode === "pot" && (
+          <FormField
+            label="Pot Allocations"
+            hint={`Defines each bucket's share of the total portfolio. Total: ${total.toFixed(1)}%`}
+          >
+            <div className="flex flex-col gap-2">
+              {STRATEGIES.map(({ key, label, color }) => (
+                <div key={key} className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                  <span className="text-xs text-foreground w-20 shrink-0">{label}</span>
+                  <Input
+                    type="number" min={0} max={100} step={1}
+                    value={allocs[key]}
+                    onChange={(e) => setAllocs((a) => ({ ...a, [key]: e.target.value }))}
+                    className="w-20 text-right font-mono"
+                  />
+                  <span className="text-xs text-muted-foreground">%</span>
+                </div>
+              ))}
+              {mismatch && (
+                <div className="flex items-center gap-1.5 text-xs text-warning mt-1">
+                  <AlertTriangle size={11} /> Allocations sum to {total.toFixed(1)}% — ideally 100%
+                </div>
+              )}
+            </div>
+          </FormField>
+        )}
+
+      </DialogBody>
+      <DialogFooter>
+        <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+        <Button variant="brand" size="sm" onClick={handleSave}>Save</Button>
+      </DialogFooter>
+    </Dialog>
+  );
+}
+
 // ── Sandbox Summary Panel ──────────────────────────────────────────────────
 
-function SandboxSummaryPanel({ sandbox, totalWeight, onSave, onPromote, saving, promoting, onAutoDistribute }) {
+const SANDBOX_VIEW_OPTS = [
+  { key: "fortress",  label: "Fortress",  short: "Fort.",  color: "#5aabcc" },
+  { key: "slingshot", label: "Slingshot", short: "Sling.", color: "#f4a636" },
+];
+
+function SandboxSummaryPanel({ sandbox, totalWeight, onSave, onPromote, saving, promoting, onAutoDistribute, onOpenSettings, totalCapital, displayCurrency }) {
+  const potMode = sandbox.potMode ?? "pot";
+  const potAllocations = sandbox.potAllocations || defaultPotAllocations();
   const cash = Math.max(0, 100 - totalWeight);
   const overAllocated = totalWeight > 100.01;
   const grouped = holdingsBySection(sandbox.holdings);
+  const sym = currencySymbol(displayCurrency);
+  const [viewMode, setViewMode] = useState("slingshot");
 
-  const donutData = STRATEGIES.map((s) => ({
-    name: s.label, value: sumWeights(grouped[s.key] || []), fill: s.color,
-  })).filter((d) => d.value > 0);
+  // Portfolio-level weight for a single holding (pot mode: scaled by pot allocation)
+  const portWeight = (h) => {
+    if (potMode !== "pot") return Number(h.weight) || 0;
+    const sec = h.sectionOverride || "buy_and_hold";
+    return ((potAllocations[sec] || 0) * (Number(h.weight) || 0)) / 100;
+  };
+
+  // Build ticker map for the table: B&H + viewMode
+  const tickerMap = {};
+  (grouped.buy_and_hold || []).forEach((h) => {
+    if (!tickerMap[h.ticker]) tickerMap[h.ticker] = { ticker: h.ticker, bh: null, active: null };
+    tickerMap[h.ticker].bh = h;
+  });
+  (grouped[viewMode] || []).forEach((h) => {
+    if (!tickerMap[h.ticker]) tickerMap[h.ticker] = { ticker: h.ticker, bh: null, active: null };
+    tickerMap[h.ticker].active = h;
+  });
+  const tableRows = Object.values(tickerMap);
+  const viewDef = SANDBOX_VIEW_OPTS.find((v) => v.key === viewMode);
+
+  // Donut shows full picture across all sections
+  const donutData = STRATEGIES.map((s) => {
+    const sectionTotal = sumWeights(grouped[s.key] || []);
+    const value = potMode === "pot"
+      ? (potAllocations[s.key] || 0) * sectionTotal / 100
+      : sectionTotal;
+    return { name: s.label, value, fill: s.color };
+  }).filter((d) => d.value > 0);
   if (cash > 0.01) donutData.push({ name: "Cash", value: cash, fill: CASH_COLOR });
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden border-l-[3px] border-l-foreground/20 flex flex-col">
       <div className="px-4 pt-4 pb-3">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h3 className="text-sm font-semibold text-foreground truncate">{sandbox.name}</h3>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="text-sm font-semibold text-foreground truncate flex-1">{sandbox.name}</h3>
+          {/* Fort / Sling view toggle */}
+          <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5 shrink-0">
+            {SANDBOX_VIEW_OPTS.map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setViewMode(opt.key)}
+                className={cn(
+                  "px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all",
+                  viewMode === opt.key ? "bg-card shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+                style={viewMode === opt.key ? { color: opt.color } : {}}
+              >
+                {opt.short}
+              </button>
+            ))}
+          </div>
           <Badge variant={overAllocated ? "danger" : cash < 0.01 ? "success" : "muted"} className="text-[10px] font-mono shrink-0">
-            {totalWeight.toFixed(1)}% / 100%
+            {totalWeight.toFixed(1)}%
           </Badge>
+          <button
+            onClick={onOpenSettings}
+            title="Sandbox settings"
+            className="text-muted-foreground/50 hover:text-foreground transition-colors p-0.5"
+          >
+            <Settings size={12} />
+          </button>
         </div>
+
+        {potMode === "pot" && (
+          <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+            Weights are <span className="font-medium text-muted-foreground">% of each pot</span>
+          </p>
+        )}
 
         {overAllocated && (
           <div className="flex items-center gap-1 mt-1.5 text-xs text-danger">
@@ -349,7 +529,7 @@ function SandboxSummaryPanel({ sandbox, totalWeight, onSave, onPromote, saving, 
         )}
         {!overAllocated && cash > 0.01 && (
           <p className="text-xs text-muted-foreground mt-1">
-            <span className="font-medium text-foreground">{cash.toFixed(1)}%</span> Cash remaining
+            <span className="font-medium text-foreground">{cash.toFixed(1)}%</span> unallocated
           </p>
         )}
 
@@ -401,44 +581,49 @@ function SandboxSummaryPanel({ sandbox, totalWeight, onSave, onPromote, saving, 
       )}
 
       <div className="px-4 pb-4 flex-1">
-        {sandbox.holdings.length === 0 ? (
+        {tableRows.length === 0 ? (
           <p className="text-xs text-muted-foreground/60 italic py-2 text-center">No positions yet</p>
         ) : (
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border">
                 <th className="text-left pb-1.5 font-medium text-muted-foreground">Stock</th>
-                <th className="text-left pb-1.5 font-medium text-muted-foreground">Section</th>
-                <th className="text-right pb-1.5 font-medium text-foreground">Weight</th>
+                <th className="text-right pb-1.5 font-medium" style={{ color: "#c4503a" }}>B&H</th>
+                <th className="text-right pb-1.5 font-medium" style={{ color: viewDef?.color }}>
+                  {viewDef?.short}
+                </th>
+                <th className="text-right pb-1.5 font-medium text-foreground">Total</th>
+                {totalCapital > 0 && (
+                  <th className="text-right pb-1.5 font-medium text-muted-foreground">Amt</th>
+                )}
               </tr>
             </thead>
             <tbody>
-              {sandbox.holdings.map((h) => {
-                const section = h.sectionOverride || "buy_and_hold";
-                const s = STRATEGIES.find((x) => x.key === section);
+              {tableRows.map(({ ticker, bh, active }) => {
+                const bhPct  = bh     ? portWeight(bh)     : 0;
+                const actPct = active ? portWeight(active) : 0;
+                const totPct = bhPct + actPct;
+                const amt    = totalCapital > 0 ? Math.round((totalCapital * totPct) / 100) : null;
                 return (
-                  <tr key={h.ticker} className="border-b border-border/40 last:border-0">
-                    <td className="py-1.5 font-mono font-bold text-foreground">{h.ticker}</td>
-                    <td className="py-1.5">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-                        style={{ background: s?.color + "22", color: s?.color }}>
-                        {s?.label}
-                      </span>
+                  <tr key={ticker} className="border-b border-border/40 last:border-0">
+                    <td className="py-1.5 font-mono font-bold text-foreground">{ticker}</td>
+                    <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                      {bhPct  > 0 ? `${bhPct.toFixed(1)}%`  : <span className="opacity-25">—</span>}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                      {actPct > 0 ? `${actPct.toFixed(1)}%` : <span className="opacity-25">—</span>}
                     </td>
                     <td className="py-1.5 text-right tabular-nums font-semibold text-foreground">
-                      {Number(h.weight).toFixed(1)}%
+                      {totPct.toFixed(1)}%
                     </td>
+                    {totalCapital > 0 && (
+                      <td className="py-1.5 text-right tabular-nums text-muted-foreground text-[10px]">
+                        {sym}{amt?.toLocaleString("en-GB")}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
-              {cash > 0.01 && (
-                <tr className="border-t border-border">
-                  <td className="pt-1.5 font-medium text-muted-foreground/50" colSpan={2}>Cash</td>
-                  <td className="pt-1.5 text-right tabular-nums font-semibold text-muted-foreground/50">
-                    {cash.toFixed(1)}%
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         )}
@@ -450,7 +635,7 @@ function SandboxSummaryPanel({ sandbox, totalWeight, onSave, onPromote, saving, 
 // ── Correlation Matrix ─────────────────────────────────────────────────────
 
 function CorrelationMatrix({ holdings, correlations, onAnalyse, analysing }) {
-  const tickers = holdings.map((h) => h.ticker);
+  const tickers = [...new Set(holdings.map((h) => h.ticker))];
   if (tickers.length < 2) return (
     <p className="text-xs text-muted-foreground/60 italic text-center py-4">
       Add at least 2 stocks to analyse correlations.
@@ -534,7 +719,7 @@ function PromoteModal({ open, onClose, sandbox, stocks, onConfirm, promoting }) 
   useEffect(() => {
     if (open) {
       const init = {};
-      sandbox.holdings.forEach((h) => { init[h.ticker] = h.sectionOverride || "buy_and_hold"; });
+      sandbox.holdings.forEach((h) => { init[h._hid] = h.sectionOverride || "buy_and_hold"; });
       setSections(init);
     }
   }, [open, sandbox.holdings]);
@@ -548,15 +733,15 @@ function PromoteModal({ open, onClose, sandbox, stocks, onConfirm, promoting }) 
         </p>
         <div>
           {sandbox.holdings.map((h) => {
-            const s = STRATEGIES.find((x) => x.key === (sections[h.ticker] || "buy_and_hold"));
+            const s = STRATEGIES.find((x) => x.key === (sections[h._hid] || "buy_and_hold"));
             return (
-              <div key={h.ticker} className="flex items-center gap-3 py-2.5 border-b border-border/50 last:border-0">
+              <div key={h._hid} className="flex items-center gap-3 py-2.5 border-b border-border/50 last:border-0">
                 <span className="font-mono font-bold text-sm text-foreground w-14 shrink-0">{h.ticker}</span>
                 <span className="text-xs text-muted-foreground flex-1 truncate">{stockMap[h.ticker]?.fact_sheet?.name || ""}</span>
                 <span className="text-xs font-mono text-foreground shrink-0">{h.weight}%</span>
                 <select
-                  value={sections[h.ticker] || "buy_and_hold"}
-                  onChange={(e) => setSections((prev) => ({ ...prev, [h.ticker]: e.target.value }))}
+                  value={sections[h._hid] || "buy_and_hold"}
+                  onChange={(e) => setSections((prev) => ({ ...prev, [h._hid]: e.target.value }))}
                   className="h-7 rounded-md border border-input bg-background text-xs px-2 focus:outline-none focus:ring-1 focus:ring-ring appearance-none"
                   style={{ color: s?.color }}
                 >
@@ -583,7 +768,7 @@ function PromoteModal({ open, onClose, sandbox, stocks, onConfirm, promoting }) 
 // ── Main Page ──────────────────────────────────────────────────────────────
 
 export default function SandboxPage() {
-  const { stocks, setStocks, sandboxes, setSandboxes, saveSandbox: saveSandboxStore, addHolding, openFactSheet } = usePortfolioStore();
+  const { stocks, setStocks, sandboxes, setSandboxes, saveSandbox: saveSandboxStore, openFactSheet, holdings: storeHoldings, setHoldings } = usePortfolioStore();
   const [loading, setLoading]         = useState(true);
   const [activeSandbox, setActiveSandbox] = useState(null);
   const [newOpen, setNewOpen]         = useState(false);
@@ -592,6 +777,9 @@ export default function SandboxPage() {
   const [saving, setSaving]           = useState(false);
   const [analysing, setAnalysing]     = useState(false);
   const [displayCurrency]             = useState(getDisplayCurrency);
+  const [sandboxCapital, setSandboxCapital] = useState(() => Number(localStorage.getItem("pf_total_capital") || "0"));
+  const [expandedSection, setExpandedSection] = useState(null);
+  const [sandboxSettingsOpen, setSandboxSettingsOpen] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -610,8 +798,11 @@ export default function SandboxPage() {
 
   const handleCreate = (name) => setActiveSandbox(newSandbox(name));
 
+  const ensureIds = (holdings) =>
+    (holdings || []).map((h) => h._hid ? h : { ...h, _hid: crypto.randomUUID() });
+
   const handleLoad = (sb) =>
-    setActiveSandbox({ id: sb.id, name: sb.name, holdings: sb.holdings || [], correlations: sb.correlations || {} });
+    setActiveSandbox({ id: sb.id, name: sb.name, holdings: ensureIds(sb.holdings), correlations: sb.correlations || {}, potMode: sb.potMode ?? "pot", potAllocations: sb.potAllocations || defaultPotAllocations() });
 
   const handleSave = async () => {
     if (!activeSandbox) return;
@@ -619,12 +810,13 @@ export default function SandboxPage() {
     const { data, error } = await upsertSandbox({
       id: activeSandbox.id, name: activeSandbox.name,
       holdings: activeSandbox.holdings, correlations: activeSandbox.correlations,
+      potMode: activeSandbox.potMode ?? "pot", potAllocations: activeSandbox.potAllocations || defaultPotAllocations(),
     });
     setSaving(false);
     if (error) { toast.error("Failed to save: " + error.message); return; }
     if (data) {
       saveSandboxStore(data);
-      setActiveSandbox((s) => ({ ...s, id: data.id }));
+      setActiveSandbox((s) => ({ ...s, id: data.id, potMode: data.potMode ?? s.potMode, potAllocations: data.potAllocations || s.potAllocations }));
       toast.success(`"${activeSandbox.name}" saved.`);
     }
   };
@@ -643,15 +835,18 @@ export default function SandboxPage() {
       name: sb.name + " (Copy)",
       holdings: (sb.holdings || []).map((h) => ({ ...h })),
       correlations: { ...(sb.correlations || {}) },
+      potMode: sb.potMode ?? "pot",
+      potAllocations: sb.potAllocations || defaultPotAllocations(),
     };
     const { data, error } = await upsertSandbox({
       id: cloned.id, name: cloned.name,
       holdings: cloned.holdings, correlations: cloned.correlations,
+      potMode: cloned.potMode, potAllocations: cloned.potAllocations,
     });
     if (error) { toast.error("Failed to clone: " + error.message); return; }
     if (data) {
       saveSandboxStore(data);
-      setActiveSandbox({ id: data.id, name: data.name, holdings: data.holdings || [], correlations: data.correlations || {} });
+      setActiveSandbox({ id: data.id, name: data.name, holdings: ensureIds(data.holdings), correlations: data.correlations || {}, potMode: data.potMode ?? "pot", potAllocations: data.potAllocations || defaultPotAllocations() });
       toast.success(`Cloned to "${data.name}".`);
     }
   };
@@ -661,28 +856,28 @@ export default function SandboxPage() {
   const addStockToSandbox = (stock, sectionKey) => {
     setActiveSandbox((s) => ({
       ...s,
-      holdings: [...s.holdings, { ticker: stock.ticker, weight: 0, sectionOverride: sectionKey }],
+      holdings: [...s.holdings, { _hid: crypto.randomUUID(), ticker: stock.ticker, weight: 0, sectionOverride: sectionKey }],
     }));
   };
 
-  const updateWeight = (ticker, value) => {
+  const updateWeight = (hid, value) => {
     setActiveSandbox((s) => ({
       ...s,
       holdings: s.holdings.map((h) =>
-        h.ticker === ticker ? { ...h, weight: value === "" ? "" : Number(value) } : h
+        h._hid === hid ? { ...h, weight: value === "" ? "" : Number(value) } : h
       ),
     }));
   };
 
-  const updateSection = (ticker, section) => {
+  const updateSection = (hid, section) => {
     setActiveSandbox((s) => ({
       ...s,
-      holdings: s.holdings.map((h) => h.ticker === ticker ? { ...h, sectionOverride: section } : h),
+      holdings: s.holdings.map((h) => h._hid === hid ? { ...h, sectionOverride: section } : h),
     }));
   };
 
-  const removeFromSandbox = (ticker) => {
-    setActiveSandbox((s) => ({ ...s, holdings: s.holdings.filter((h) => h.ticker !== ticker) }));
+  const removeFromSandbox = (hid) => {
+    setActiveSandbox((s) => ({ ...s, holdings: s.holdings.filter((h) => h._hid !== hid) }));
   };
 
   const autoDistribute = () => {
@@ -705,7 +900,7 @@ export default function SandboxPage() {
     const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
     if (!apiKey) { toast.error("VITE_ANTHROPIC_API_KEY is not configured."); return; }
 
-    const tickers = activeSandbox.holdings.map((h) => h.ticker);
+    const tickers = [...new Set(activeSandbox.holdings.map((h) => h.ticker))];
     const pairs = [];
     for (let i = 0; i < tickers.length; i++)
       for (let j = i + 1; j < tickers.length; j++)
@@ -754,29 +949,63 @@ export default function SandboxPage() {
   const handlePromote = async (sectionMap) => {
     if (!activeSandbox) return;
     setPromoting(true);
+
+    const strategiesUsed = [...new Set(Object.values(sectionMap))];
+
+    // Overwrite: delete all existing holdings in the target strategies first
+    for (const strategy of strategiesUsed) {
+      const { data: existing } = await fetchHoldings(strategy);
+      if (existing && existing.length > 0) {
+        await Promise.all(existing.map((h) => deleteHolding(h.id)));
+      }
+    }
+
+    // Insert new holdings and collect results per strategy
     let errors = 0;
+    const newByStrategy = Object.fromEntries(strategiesUsed.map((s) => [s, []]));
     for (const h of activeSandbox.holdings) {
-      const strategy = sectionMap[h.ticker] || "buy_and_hold";
+      const strategy = sectionMap[h._hid] || "buy_and_hold";
       const { data, error } = await insertHolding({
         ticker: h.ticker, weight: Number(h.weight) || 0, entry_date: today(), strategy,
       });
       if (error) errors++;
-      else if (data) addHolding(strategy, data);
+      else if (data) newByStrategy[strategy].push(data);
     }
+
+    // Sync store: replace overwritten strategies, keep others intact
+    setHoldings({ ...storeHoldings, ...newByStrategy });
+
     setPromoting(false);
     setPromoteOpen(false);
     if (errors > 0) toast.error(`${errors} holding(s) failed to promote.`);
     else toast.success(`${activeSandbox.holdings.length} position(s) promoted to portfolio.`);
   };
 
+  // ── Settings handler ──
+
+  const handleSandboxSettingsChange = ({ potMode, potAllocations, capital }) => {
+    setActiveSandbox((s) => ({ ...s, potMode, potAllocations }));
+    if (capital !== undefined) setSandboxCapital(capital);
+  };
+
   // ── Derived ──
 
-  const totalWeight = activeSandbox
-    ? activeSandbox.holdings.reduce((s, h) => s + (Number(h.weight) || 0), 0)
-    : 0;
-  const overAllocated = totalWeight > 100.01;
-  const existingTickers = new Set(activeSandbox?.holdings.map((h) => h.ticker) || []);
   const grouped = activeSandbox ? holdingsBySection(activeSandbox.holdings) : {};
+
+  const totalWeight = (() => {
+    if (!activeSandbox) return 0;
+    const potMode = activeSandbox.potMode ?? "pot";
+    if (potMode !== "pot") {
+      return activeSandbox.holdings.reduce((s, h) => s + (Number(h.weight) || 0), 0);
+    }
+    const potAllocations = activeSandbox.potAllocations || defaultPotAllocations();
+    return STRATEGIES.reduce((t, { key }) => {
+      const sectionSum = sumWeights(grouped[key] || []);
+      return t + ((potAllocations[key] || 0) * sectionSum) / 100;
+    }, 0);
+  })();
+
+  const overAllocated = totalWeight > 100.01;
 
   if (loading) {
     return (
@@ -867,11 +1096,23 @@ export default function SandboxPage() {
               saving={saving}
               promoting={promoting}
               onAutoDistribute={autoDistribute}
+              onOpenSettings={() => setSandboxSettingsOpen(true)}
+              totalCapital={sandboxCapital}
+              displayCurrency={displayCurrency}
             />
           </div>
 
           {/* Section cards + correlation */}
           <div className="flex-1 min-w-0 flex flex-col gap-4">
+            <div className="flex items-center justify-end">
+              <button
+                onClick={() => exportSandboxPdf({ sandbox: activeSandbox, stocks })}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-2.5 py-1.5 transition-colors"
+              >
+                <FileDown size={13} />
+                Export PDF
+              </button>
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {STRATEGIES.map((stratDef) => (
                 <SandboxSection
@@ -879,12 +1120,13 @@ export default function SandboxPage() {
                   stratDef={stratDef}
                   holdings={grouped[stratDef.key] || []}
                   allStocks={stocks}
-                  existingTickers={existingTickers}
+                  existingTickers={new Set((grouped[stratDef.key] || []).map((h) => h.ticker))}
                   onAddStock={addStockToSandbox}
                   onWeightChange={updateWeight}
                   onSectionChange={updateSection}
                   onRemove={removeFromSandbox}
                   onStockClick={openFactSheet}
+                  onExpand={() => setExpandedSection(stratDef.key)}
                 />
               ))}
             </div>
@@ -905,10 +1147,34 @@ export default function SandboxPage() {
 
       <NewSandboxModal open={newOpen} onClose={() => setNewOpen(false)} onCreate={handleCreate} />
       {activeSandbox && (
+        <SandboxSettingsModal
+          open={sandboxSettingsOpen}
+          onClose={() => setSandboxSettingsOpen(false)}
+          potMode={activeSandbox.potMode ?? "pot"}
+          potAllocations={activeSandbox.potAllocations || defaultPotAllocations()}
+          capital={sandboxCapital}
+          displayCurrency={displayCurrency}
+          onChange={handleSandboxSettingsChange}
+        />
+      )}
+      {activeSandbox && (
         <PromoteModal
           open={promoteOpen} onClose={() => setPromoteOpen(false)}
           sandbox={activeSandbox} stocks={stocks}
           onConfirm={handlePromote} promoting={promoting}
+        />
+      )}
+      {expandedSection && activeSandbox && (
+        <PotExpandedModal
+          open={true}
+          onClose={() => setExpandedSection(null)}
+          stratDef={STRATEGIES.find((s) => s.key === expandedSection)}
+          holdings={(grouped[expandedSection] || [])}
+          stocks={stocks}
+          target={null}
+          totalCapital={0}
+          displayCurrency={displayCurrency}
+          showEntryDate={false}
         />
       )}
     </div>

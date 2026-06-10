@@ -4,11 +4,11 @@ import { cn } from "../../lib/utils";
 import { toMonthly, fmtMoney } from "../../lib/ukTax";
 import BudgetLineItem from "./BudgetLineItem";
 import Tip from "../Tip";
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus } from "lucide-react";
 
 const fmt = fmtMoney;
 
-export default function StepEssentials({ items, onChange, takeHome, committedTotal, onContinue }) {
+export default function StepEssentials({ items, onChange, takeHome, committedTotal, onContinue, onBack }) {
   const total = items.reduce((s, i) => s + toMonthly(i.amount, i.frequency), 0);
   const surplus = Math.round((takeHome - committedTotal - total) * 100) / 100;
 
@@ -101,7 +101,13 @@ export default function StepEssentials({ items, onChange, takeHome, committedTot
         </Card>
       </div>
 
-      <div className="flex justify-end pt-2">
+      <div className="flex justify-between gap-2 pt-2">
+        {onBack ? (
+          <Button variant="outline" size="lg" onClick={onBack} className="gap-2">
+            <ArrowLeft size={16} />
+            Back
+          </Button>
+        ) : <span />}
         <Button variant="brand" size="lg" onClick={onContinue} className="gap-2">
           Continue
           <ArrowRight size={16} />

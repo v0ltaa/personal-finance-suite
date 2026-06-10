@@ -26,6 +26,7 @@ export default function Field({ label, value, onChange, prefix, suffix, tip, not
         )}
         <input
           type="number"
+          step="any"
           value={value}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}

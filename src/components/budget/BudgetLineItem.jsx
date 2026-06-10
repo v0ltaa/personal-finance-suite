@@ -22,18 +22,17 @@ export default function BudgetLineItem({
   const singlePerson = item.singlePerson || false;
   const effectiveMonthly = isCouncilTax && singlePerson ? monthly * 0.75 : monthly;
 
-  const [rawInput, setRawInput] = useState(null); // track formula while typing
+  // Keep the raw text while typing so decimals ("130.73") and formulas
+  // ("=850/2") aren't reformatted mid-keystroke; format on blur.
+  const [rawInput, setRawInput] = useState(null);
 
   const handleAmountChange = (e) => {
     const raw = e.target.value;
-    if (raw.startsWith("=")) {
-      setRawInput(raw);
-      return;
-    }
-    setRawInput(null);
+    setRawInput(raw);
+    if (raw.startsWith("=")) return;
     const clean = raw.replace(/,/g, "");
-    const val = clean === "" ? 0 : Math.max(0, Number(clean));
-    if (!isNaN(val)) onChange({ ...item, amount: val });
+    const val = clean === "" ? 0 : Number(clean);
+    if (!isNaN(val) && val >= 0) onChange({ ...item, amount: val });
   };
 
   const handleAmountBlur = () => {
@@ -42,8 +41,8 @@ export default function BudgetLineItem({
       if (!isNaN(result) && result >= 0) {
         onChange({ ...item, amount: Math.round(result * 100) / 100 });
       }
-      setRawInput(null);
     }
+    setRawInput(null);
   };
 
   const handleAmountKeyDown = (e) => {
@@ -115,7 +114,7 @@ export default function BudgetLineItem({
             >
               {FREQUENCY_OPTIONS.map((f) => (
                 <option key={f.value} value={f.value}>
-                  /{f.value.slice(0, 2)}
+                  /{f.short}
                 </option>
               ))}
             </Select>
@@ -132,7 +131,8 @@ export default function BudgetLineItem({
               variant="ghost"
               size="icon-sm"
               onClick={onRemove}
-              className="opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 text-muted-foreground hover:text-danger"
+              aria-label={`Remove ${item.name}`}
+              className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 transition-opacity h-7 w-7 text-muted-foreground hover:text-danger"
             >
               <X size={14} />
             </Button>

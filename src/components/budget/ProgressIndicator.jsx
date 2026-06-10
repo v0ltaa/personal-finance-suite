@@ -10,7 +10,7 @@ export default function ProgressIndicator({ currentStep, onStepClick, completedS
       {labels.map((label, i) => {
         const isActive = i === currentStep;
         const isCompleted = completedSteps.includes(i);
-        const isClickable = isCompleted || i <= Math.max(...completedSteps, 0);
+        const isClickable = isActive || isCompleted || i <= Math.max(...completedSteps, 0);
 
         return (
           <button
@@ -33,7 +33,7 @@ export default function ProgressIndicator({ currentStep, onStepClick, completedS
                 {i + 1}
               </span>
             )}
-            <span className="hidden sm:inline">{label}</span>
+            <span className={cn(!isActive && "hidden sm:inline")}>{label}</span>
           </button>
         );
       })}

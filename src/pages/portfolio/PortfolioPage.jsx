@@ -49,6 +49,19 @@ const STRATEGIES = [
 const CHART_COLORS = ["#c4503a", "#5aabcc", "#7bc47c", "#f4a636", "#9b5fc0", "#4a90d9", "#e07b54"];
 const UNALLOCATED_COLOR = "#e5e7eb";
 const SLINGSHOT_DAYS = 90;
+const DEFAULT_POT_ALLOCS = { buy_and_hold: 40, fortress: 30, slingshot: 30 };
+
+function loadPotAllocations() {
+  const stored = localStorage.getItem("pf_pot_allocations");
+  if (stored) { try { return JSON.parse(stored); } catch {} }
+  // migrate from old single buyHoldPct value
+  const oldBH = Number(localStorage.getItem("pf_buy_hold_pct") || 0);
+  if (oldBH) {
+    const active = 100 - oldBH;
+    return { buy_and_hold: oldBH, fortress: Math.round(active / 2), slingshot: 100 - oldBH - Math.round(active / 2) };
+  }
+  return { ...DEFAULT_POT_ALLOCS };
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { Card, CardContent } from "../ui/card";
+import Modal from "../ui/modal";
 import { Input } from "../ui/input";
 import { Select } from "../ui/select";
 import { Button } from "../ui/button";
@@ -8,6 +9,7 @@ import { toMonthly, FREQUENCY_OPTIONS, fmtMoney, fmtInputValue, evalFormula } fr
 import { Chart as ChartJS, ArcElement, Tooltip as ChartTooltip, Legend } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
 import { Edit2, Save, Plus, X, FolderOpen, Settings2, Download } from "lucide-react";
+import StepIncome from "./StepIncome";
 
 ChartJS.register(ArcElement, ChartTooltip, Legend);
 
@@ -76,16 +78,14 @@ function LineRow({ label, amount }) {
 function EditableRow({ item, onChange, onRemove }) {
   const [rawInput, setRawInput] = useState(null);
 
+  // Keep raw text while typing so decimals and "=" formulas survive re-renders
   const handleAmountChange = (e) => {
     const raw = e.target.value;
-    if (raw.startsWith("=")) {
-      setRawInput(raw);
-      return;
-    }
-    setRawInput(null);
+    setRawInput(raw);
+    if (raw.startsWith("=")) return;
     const clean = raw.replace(/,/g, "");
-    const val = clean === "" ? 0 : Math.max(0, Number(clean));
-    if (!isNaN(val)) onChange({ ...item, amount: val });
+    const val = clean === "" ? 0 : Number(clean);
+    if (!isNaN(val) && val >= 0) onChange({ ...item, amount: val });
   };
 
   const handleAmountBlur = () => {
@@ -94,8 +94,8 @@ function EditableRow({ item, onChange, onRemove }) {
       if (!isNaN(result) && result >= 0) {
         onChange({ ...item, amount: Math.round(result * 100) / 100 });
       }
-      setRawInput(null);
     }
+    setRawInput(null);
   };
 
   return (
@@ -122,12 +122,13 @@ function EditableRow({ item, onChange, onRemove }) {
         className="w-auto h-8 text-xs pr-7 pl-2"
       >
         {FREQUENCY_OPTIONS.map((f) => (
-          <option key={f.value} value={f.value}>/{f.value.slice(0, 2)}</option>
+          <option key={f.value} value={f.value}>/{f.short}</option>
         ))}
       </Select>
       <button
         onClick={onRemove}
-        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-danger transition-all p-1 shrink-0"
+        aria-label={`Remove ${item.name || "item"}`}
+        className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 text-muted-foreground hover:text-danger transition-all p-1 shrink-0"
       >
         <X size={14} />
       </button>
@@ -168,21 +169,19 @@ function EditDialog({ title, color, items, grouped, onChange, onClose }) {
   }, [items, grouped]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
-      <Card className="w-full max-w-lg mx-4 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-5 pb-3 border-b border-border">
-          <div className="flex items-center gap-2">
-            <div className={cn("w-2.5 h-2.5 rounded-full", color)} />
-            <h3 className="font-semibold text-foreground">{title}</h3>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-bold tabular-nums">{fmt(total)}/mo</span>
-            <Button variant="ghost" size="icon-sm" onClick={onClose}>
-              <X size={14} />
-            </Button>
-          </div>
+    <Modal
+      title={
+        <div className="flex items-center gap-2">
+          <div className={cn("w-2.5 h-2.5 rounded-full", color)} />
+          <h3 className="font-semibold text-foreground">{title}</h3>
         </div>
-        <div className="flex-1 overflow-y-auto p-5 pt-3">
+      }
+      ariaLabel={`Edit ${title}`}
+      onClose={onClose}
+      maxWidth="max-w-lg"
+      bodyClassName="pt-3"
+      headerExtra={<span className="text-sm font-bold tabular-nums">{fmt(total)}/mo</span>}
+    >
           {grouped && groups ? (
             <div className="space-y-4">
               {Object.entries(groups).map(([cat, catItems]) => (
@@ -225,17 +224,16 @@ function EditDialog({ title, color, items, grouped, onChange, onClose }) {
               </button>
             </div>
           )}
-        </div>
-      </Card>
-    </div>
+    </Modal>
   );
 }
 
 // ── Read-only category card ──
 
-function CategoryCard({ title, color, accent, items, total, onEdit, children }) {
+function CategoryCard({ title, color, accent, items, total, displayTotal, onEdit, children, extraContent }) {
   const filledItems = items ? items.filter((i) => i.amount > 0) : [];
   const hasItems = filledItems.length > 0;
+  const shownTotal = displayTotal ?? total;
 
   return (
     <Card className={cn("break-inside-avoid border-l-2", accent, onEdit && "cursor-pointer hover:border-brand/40 transition-colors")} onClick={onEdit}>
@@ -260,12 +258,13 @@ function CategoryCard({ title, color, accent, items, total, onEdit, children }) 
             )) : (
               <p className="text-xs text-muted-foreground italic py-1">No items yet</p>
             )}
+            {extraContent}
           </div>
         ) : children}
-        {total !== undefined && (
+        {shownTotal !== undefined && (
           <div className="border-t border-border mt-2 pt-2 flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">Total</span>
-            <span className="text-sm font-bold tabular-nums">{fmt(total)}/mo</span>
+            <span className="text-sm font-bold tabular-nums">{fmt(shownTotal)}/mo</span>
           </div>
         )}
       </CardContent>
@@ -337,96 +336,149 @@ const PIE_COLORS = [
 
 function exportBudgetCSV(budget, budgetName) {
   const rows = [];
-  const takeHome = budget.income.monthlyTakeHome;
+  const inc = budget.income;
+  const takeHome = inc.monthlyTakeHome;
   const committed = budget.committedTotal;
   const essentials = budget.essentialsTotal;
   const savings = budget.savingsTotal;
   const lifestyle = budget.lifestyleTotal;
   const totalOutgoings = committed + essentials + savings + lifestyle;
   const unallocated = Math.round((takeHome - totalOutgoings) * 100) / 100;
-  const budgetRule = budget.budgetRule || { needs: 50, wants: 30, savings: 20 };
+  const budgetMode = budget.budgetMode || "realistic";
+  const budgetRule = budget.budgetRule || { needs: 50, wants: 30, savings: 20, countEmployerMatchInSavings: true };
+  const isManual = inc.mode === "manual";
 
-  const needsPct = takeHome > 0 ? ((committed + essentials) / takeHome) * 100 : 0;
-  const wantsPct = takeHome > 0 ? (lifestyle / takeHome) * 100 : 0;
-  const savingsPct = takeHome > 0 ? (savings / takeHome) * 100 : 0;
+  // Employer match
+  const employerMatchMonthly = (() => {
+    if (!inc.pensionEmployerMatchEnabled) return 0;
+    if (isManual) return inc.pensionEmployerMatchMonthly ?? inc.manualPensionMonthly ?? 0;
+    return (inc.grossAnnual ?? 0) * (inc.pensionEmployerMatchPct ?? 0) / 100 / 12;
+  })();
+  const countMatch = !!(budgetRule.countEmployerMatchInSavings ?? true) && employerMatchMonthly > 0;
+
+  // Effective values (unallocated flows into savings or wants depending on mode)
+  const effectiveSavings = savings + (budgetMode === "realistic" && unallocated > 0 ? unallocated : 0);
+  const effectiveWants = lifestyle + (budgetMode === "traditional" && unallocated > 0 ? unallocated : 0);
+  const pctBase = takeHome + (countMatch ? employerMatchMonthly : 0);
+  const needsPct  = pctBase > 0 ? ((committed + essentials) / pctBase) * 100 : 0;
+  const wantsPct  = pctBase > 0 ? (effectiveWants / pctBase) * 100 : 0;
+  const savingsPct = pctBase > 0 ? ((effectiveSavings + (countMatch ? employerMatchMonthly : 0)) / pctBase) * 100 : 0;
   const needsTarget = takeHome * budgetRule.needs / 100;
   const wantsTarget = takeHome * budgetRule.wants / 100;
   const savingsTarget = takeHome * budgetRule.savings / 100;
 
-  const cell = (v) => (typeof v === "string" && v.includes(",")) ? `"${v}"` : String(v ?? "");
+  const cell = (v) => (typeof v === "string" && (v.includes(",") || v.includes("\n"))) ? `"${v.replace(/"/g, '""')}"` : String(v ?? "");
   const row = (...cols) => rows.push(cols.map(cell).join(","));
   const blank = () => rows.push("");
-  const header = (title) => { blank(); row(title); row("─".repeat(title.length)); };
+  const header = (title) => { blank(); row(title); };
 
   row(`BUDGET: ${budgetName || "Untitled"}`, "", "", `Exported: ${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`);
+  row(`Mode: ${budgetMode === "realistic" ? "Lifestyle first" : "Savings first"}`, "", "", `Rule: ${budgetRule.needs}/${budgetRule.wants}/${budgetRule.savings}`);
   blank();
 
-  // Summary
+  // ── Summary ──
   header("SUMMARY");
-  row("Take-home", fmt(takeHome) + "/mo");
+  row("Take-home", fmt(takeHome) + "/mo", "", fmt(takeHome * 12) + "/yr");
   row("Total outgoings", fmt(totalOutgoings) + "/mo");
-  row("Unallocated", fmt(unallocated) + "/mo");
+  row("Unallocated", fmt(unallocated) + "/mo", budgetMode === "realistic" ? "(auto-added to savings)" : "(auto-added to wants)");
   row("Daily spend", "£" + ((takeHome - committed - essentials - savings) / 30).toFixed(2));
-  blank();
-
-  // Budget rule
-  header(`BUDGET RULE  (${budgetRule.needs} / ${budgetRule.wants} / ${budgetRule.savings})`);
-  row("", "Target %", "Actual %", "Actual £/mo", "Target £/mo", "Status");
-  row("Needs",   budgetRule.needs  + "%", needsPct.toFixed(1)  + "%", fmt(committed + essentials), fmt(needsTarget),  needsPct  <= budgetRule.needs  ? "✓ On track" : "✗ Over");
-  row("Wants",   budgetRule.wants  + "%", wantsPct.toFixed(1)  + "%", fmt(lifestyle),               fmt(wantsTarget),  wantsPct  <= budgetRule.wants  ? "✓ On track" : "✗ Over");
-  row("Savings", budgetRule.savings + "%", savingsPct.toFixed(1) + "%", fmt(savings),               fmt(savingsTarget), savingsPct >= budgetRule.savings ? "✓ On track" : "✗ Under");
-  blank();
-
-  // Income
-  header("INCOME");
-  if (budget.income.mode === "manual") {
-    row("Manual take-home", fmt(takeHome) + "/mo");
-  } else {
-    row("Gross annual", fmt(budget.income.grossAnnual) + "/yr");
-    if (budget.income.pensionPct > 0) row("Pension contribution", budget.income.pensionPct + "%");
-    if (budget.income.studentLoan !== "none") row("Student loan", budget.income.studentLoan.replace("plan", "Plan "));
-    row("Net take-home", fmt(takeHome) + "/mo");
+  if (employerMatchMonthly > 0) {
+    row("Employer pension match", fmt(employerMatchMonthly) + "/mo", fmt(employerMatchMonthly * 12) + "/yr", "(outside take-home)");
   }
   blank();
 
-  // Committed
-  header(`COMMITTED  (${fmt(committed)}/mo)`);
-  row("Category", "Item", "Amount", "Frequency", "Monthly");
-  budget.committed.forEach((item) => {
-    const monthly = toMonthly(item.amount, item.frequency);
-    if (monthly > 0) row(item.category || "", item.name, fmt(item.amount), item.frequency, fmt(monthly));
-  });
-  row("", "TOTAL", "", "", fmt(committed));
+  // ── Budget rule ──
+  header(`BUDGET RULE  (${budgetRule.needs} / ${budgetRule.wants} / ${budgetRule.savings})`);
+  if (countMatch) row("", "", "", "", "", "* includes employer match in savings");
+  row("", "Target %", "Actual %", "Actual £/mo", "Target £/mo", "Status");
+  row("Needs",   budgetRule.needs  + "%", needsPct.toFixed(1)  + "%", fmt(committed + essentials), fmt(needsTarget),  needsPct  <= budgetRule.needs  ? "✓ On track" : "✗ Over");
+  row("Wants",   budgetRule.wants  + "%", wantsPct.toFixed(1)  + "%", fmt(effectiveWants),          fmt(wantsTarget),  wantsPct  <= budgetRule.wants  ? "✓ On track" : "✗ Over");
+  row("Savings", budgetRule.savings + "%", savingsPct.toFixed(1) + "%", fmt(effectiveSavings + (countMatch ? employerMatchMonthly : 0)), fmt(savingsTarget), savingsPct >= budgetRule.savings ? "✓ On track" : "✗ Under");
+  row("Savings rate", "", savingsPct.toFixed(1) + "%", "", "", "Annual: " + fmt((effectiveSavings + (countMatch ? employerMatchMonthly : 0)) * 12) + "/yr");
   blank();
 
-  // Essentials
-  header(`ESSENTIALS  (${fmt(essentials)}/mo)`);
+  // ── Income ──
+  header("INCOME");
+  if (isManual) {
+    row("Mode", "Manual (take-home entered directly)");
+    row("Monthly take-home", fmt(takeHome) + "/mo", fmt(takeHome * 12) + "/yr");
+    if ((inc.manualPensionMonthly ?? 0) > 0) {
+      row("Your pension contribution", fmt(inc.manualPensionMonthly) + "/mo", fmt(inc.manualPensionMonthly * 12) + "/yr", "(already deducted from take-home)");
+    }
+  } else {
+    row("Mode", "Calculated from salary");
+    row("Gross annual salary", fmt(inc.grossAnnual) + "/yr", fmt(inc.grossAnnual / 12) + "/mo");
+    if ((inc.pensionPct ?? 0) > 0) {
+      const pensionMo = (inc.grossAnnual * inc.pensionPct / 100) / 12;
+      row("Pension (salary sacrifice)", inc.pensionPct + "%", fmt(pensionMo) + "/mo", fmt(pensionMo * 12) + "/yr");
+    }
+    if (inc.studentLoan && inc.studentLoan !== "none") row("Student loan", inc.studentLoan.replace("plan", "Plan "));
+    if ((inc.deductions || []).length > 0) {
+      row("Other payroll deductions:");
+      (inc.deductions || []).forEach((d) => {
+        const mo = toMonthly(d.amount, d.frequency);
+        if (mo > 0) row("  " + d.name, fmt(d.amount), d.frequency, fmt(mo) + "/mo");
+      });
+    }
+    row("Net take-home", fmt(takeHome) + "/mo", fmt(takeHome * 12) + "/yr");
+  }
+  if (employerMatchMonthly > 0) {
+    row("Employer pension match", fmt(employerMatchMonthly) + "/mo", fmt(employerMatchMonthly * 12) + "/yr", "(free money — outside your take-home)");
+  }
+  blank();
+
+  // ── Committed ──
+  header(`COMMITTED  (${fmt(committed)}/mo  ·  ${fmt(committed * 12)}/yr)`);
+  row("Category", "Item", "Amount", "Frequency", "Monthly");
+  budget.committed.forEach((item) => {
+    const monthly = effectiveMonthly(item);
+    if (monthly > 0) row(item.category || "", item.name, fmt(item.amount), item.frequency, fmt(monthly));
+  });
+  row("", "TOTAL", "", "", fmt(committed), fmt(committed * 12) + "/yr");
+  blank();
+
+  // ── Essentials ──
+  header(`ESSENTIALS  (${fmt(essentials)}/mo  ·  ${fmt(essentials * 12)}/yr)`);
   row("Item", "Amount", "Frequency", "Monthly");
   budget.essentials.forEach((item) => {
     const monthly = toMonthly(item.amount, item.frequency);
     if (monthly > 0) row(item.name, fmt(item.amount), item.frequency, fmt(monthly));
   });
-  row("TOTAL", "", "", fmt(essentials));
+  row("TOTAL", "", "", fmt(essentials), fmt(essentials * 12) + "/yr");
   blank();
 
-  // Savings
-  header(`SAVINGS  (${fmt(savings)}/mo)`);
-  row("Item", "Amount", "Frequency", "Monthly", "Annual");
+  // ── Savings ──
+  const savingsDisplayTotal = effectiveSavings + (countMatch ? employerMatchMonthly : 0);
+  header(`SAVINGS  (${fmt(savingsDisplayTotal)}/mo  ·  ${fmt(savingsDisplayTotal * 12)}/yr)`);
+  row("Item", "Amount", "Frequency", "Monthly", "Annual", "Note");
   budget.savings.forEach((item) => {
     const monthly = toMonthly(item.amount, item.frequency);
-    if (monthly > 0) row(item.name, fmt(item.amount), item.frequency, fmt(monthly), fmt(monthly * 12));
+    if (monthly > 0) row(item.name, fmt(item.amount), item.frequency, fmt(monthly), fmt(monthly * 12), "");
   });
-  row("TOTAL", "", "", fmt(savings), fmt(savings * 12));
+  if (budgetMode === "realistic" && unallocated > 0) {
+    row("Unallocated (auto-saved)", "", "", fmt(unallocated), fmt(unallocated * 12), "surplus flows to savings");
+  }
+  if (employerMatchMonthly > 0) {
+    row("Employer pension match", "", "", fmt(employerMatchMonthly), fmt(employerMatchMonthly * 12), "outside take-home" + (!countMatch ? " (not in % calc)" : ""));
+  }
+  row("TOTAL (savings goals)", "", "", fmt(savings), fmt(savings * 12));
+  if (unallocated > 0 || employerMatchMonthly > 0) {
+    row("TOTAL (effective savings)", "", "", fmt(savingsDisplayTotal), fmt(savingsDisplayTotal * 12));
+  }
   blank();
 
-  // Lifestyle / Wants
-  header(`LIFESTYLE / WANTS  (${fmt(lifestyle)}/mo)`);
+  // ── Lifestyle / Wants ──
+  const lifestyleDisplayTotal = effectiveWants;
+  header(`LIFESTYLE / WANTS  (${fmt(lifestyleDisplayTotal)}/mo  ·  ${fmt(lifestyleDisplayTotal * 12)}/yr)`);
   row("Item", "Amount", "Frequency", "Monthly");
   budget.discretionary.forEach((item) => {
     const monthly = toMonthly(item.amount, item.frequency);
     if (monthly > 0) row(item.name, fmt(item.amount), item.frequency, fmt(monthly));
   });
-  row("TOTAL", "", "", fmt(lifestyle));
+  if (budgetMode === "traditional" && unallocated > 0) {
+    row("Unallocated (auto-added)", "", "", fmt(unallocated), "surplus flows to wants");
+  }
+  row("TOTAL", "", "", fmt(lifestyleDisplayTotal), fmt(lifestyleDisplayTotal * 12) + "/yr");
 
   const csv = rows.join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -440,8 +492,9 @@ function exportBudgetCSV(budget, budgetName) {
 
 // ── Main overview ──
 
-export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onReset, onSettings, onChangeCommitted, onChangeEssentials, onChangeSavings, onChangeDiscretionary }) {
+export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onReset, onSettings, onChangeIncome, onChangeCommitted, onChangeEssentials, onChangeSavings, onChangeDiscretionary }) {
   const [editingCategory, setEditingCategory] = useState(null);
+  const [editingIncome, setEditingIncome] = useState(false);
 
   const takeHome = budget.income.monthlyTakeHome;
   const committed = budget.committedTotal;
@@ -451,10 +504,12 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
   const totalOutgoings = committed + essentials + savings + lifestyle;
   const unallocated = Math.round((takeHome - totalOutgoings) * 100) / 100;
 
-  const budgetRule = budget.budgetRule || { needs: 50, wants: 30, savings: 20 };
-  const needsPct = takeHome > 0 ? ((committed + essentials) / takeHome) * 100 : 0;
-  const wantsPct = takeHome > 0 ? (lifestyle / takeHome) * 100 : 0;
-  const savingsPct = takeHome > 0 ? (savings / takeHome) * 100 : 0;
+  const budgetRule = budget.budgetRule || { needs: 50, wants: 30, savings: 20, countEmployerMatchInSavings: true };
+  const budgetMode = budget.budgetMode || "realistic";
+
+  // Unallocated flows into savings (lifestyle-first) or wants (savings-first)
+  const effectiveSavings = savings + (budgetMode === "realistic" && unallocated > 0 ? unallocated : 0);
+  const effectiveWants = lifestyle + (budgetMode === "traditional" && unallocated > 0 ? unallocated : 0);
 
   const needsTarget = takeHome * budgetRule.needs / 100;
   const wantsTarget = takeHome * budgetRule.wants / 100;
@@ -462,6 +517,21 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
 
   const incomeInfo = budget.income;
   const isManual = incomeInfo.mode === "manual";
+
+  // Employer match monthly amount — calc mode uses gross %, manual mode uses explicit field
+  const employerMatchMonthly = (() => {
+    if (!incomeInfo.pensionEmployerMatchEnabled) return 0;
+    if (isManual) return incomeInfo.pensionEmployerMatchMonthly ?? incomeInfo.manualPensionMonthly ?? 0;
+    return (incomeInfo.grossAnnual ?? 0) * (incomeInfo.pensionEmployerMatchPct ?? 0) / 100 / 12;
+  })();
+
+  // For % calculations: optionally include employer match in savings
+  const countMatch = !!(budgetRule.countEmployerMatchInSavings ?? true) && employerMatchMonthly > 0;
+  // The "base" for percentage calculations — takeHome + employer match if counting it
+  const pctBase = takeHome + (countMatch ? employerMatchMonthly : 0);
+  const savingsPctAdj = pctBase > 0 ? ((effectiveSavings + (countMatch ? employerMatchMonthly : 0)) / pctBase) * 100 : 0;
+  const needsPctAdj = pctBase > 0 ? ((committed + essentials) / pctBase) * 100 : 0;
+  const wantsPctAdj = pctBase > 0 ? (effectiveWants / pctBase) * 100 : 0;
 
   const compound = (monthly, years) => {
     let total = 0;
@@ -478,9 +548,9 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
     const needs = committed + essentials;
     const segments = [];
     if (needs > 0) segments.push({ label: "Needs", value: needs, color: "hsl(18, 72%, 52%)" });
-    if (lifestyle > 0) segments.push({ label: "Wants", value: lifestyle, color: "hsl(280, 50%, 55%)" });
-    if (savings > 0) segments.push({ label: "Savings", value: savings, color: "hsl(210, 60%, 50%)" });
-    if (unallocated > 0) segments.push({ label: "Unallocated", value: unallocated, color: "hsl(142, 71%, 40%)" });
+    if (effectiveWants > 0) segments.push({ label: "Wants", value: effectiveWants, color: "hsl(280, 50%, 55%)" });
+    const savingsForPie = effectiveSavings + (countMatch ? employerMatchMonthly : 0);
+    if (savingsForPie > 0) segments.push({ label: "Savings", value: savingsForPie, color: "hsl(210, 60%, 50%)" });
     return {
       labels: segments.map((s) => s.label),
       datasets: [{
@@ -490,7 +560,7 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
         borderColor: "hsl(40, 30%, 97%)",
       }],
     };
-  }, [committed, essentials, lifestyle, savings, unallocated]);
+  }, [committed, essentials, effectiveWants, effectiveSavings, countMatch, employerMatchMonthly]);
 
   // 2. Individual category breakdown
   const categoryData = useMemo(() => {
@@ -577,7 +647,7 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">All figures are monthly</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="brand" size="sm" onClick={onSave} className="gap-1.5">
             <Save size={13} />
             Save
@@ -635,18 +705,18 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
           <div className="flex flex-wrap items-start gap-6">
             <div className="flex gap-3">
               <RingGauge
-                label="Needs" actual={needsPct} target={budgetRule.needs} isMin={false}
+                label="Needs" actual={needsPctAdj} target={budgetRule.needs} isMin={false}
                 amount={committed + essentials} targetAmount={needsTarget}
                 bgClass="bg-orange-500/5" borderClass="border-orange-500/25" labelClass="text-orange-600 dark:text-orange-400"
               />
               <RingGauge
-                label="Wants" actual={wantsPct} target={budgetRule.wants} isMin={false}
-                amount={lifestyle} targetAmount={wantsTarget}
+                label="Wants" actual={wantsPctAdj} target={budgetRule.wants} isMin={false}
+                amount={effectiveWants} targetAmount={wantsTarget}
                 bgClass="bg-purple-500/5" borderClass="border-purple-500/25" labelClass="text-purple-600 dark:text-purple-400"
               />
               <RingGauge
-                label="Savings" actual={savingsPct} target={budgetRule.savings} isMin={true}
-                amount={savings} targetAmount={savingsTarget}
+                label="Savings" actual={savingsPctAdj} target={budgetRule.savings} isMin={true}
+                amount={effectiveSavings + (countMatch ? employerMatchMonthly : 0)} targetAmount={savingsTarget}
                 bgClass="bg-blue-500/5" borderClass="border-blue-500/25" labelClass="text-blue-600 dark:text-blue-400"
               />
             </div>
@@ -654,12 +724,12 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
             <div className="flex flex-wrap gap-x-6 gap-y-2 flex-1 min-w-0">
               <div>
                 <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Savings rate</p>
-                <p className="text-sm font-bold tabular-nums">{savingsPct.toFixed(1)}%</p>
+                <p className="text-sm font-bold tabular-nums">{savingsPctAdj.toFixed(1)}%</p>
               </div>
-              {savings > 0 && (
+              {effectiveSavings > 0 && (
                 <div>
                   <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Annual savings</p>
-                  <p className="text-sm font-bold tabular-nums">{fmt(savings * 12)}/yr</p>
+                  <p className="text-sm font-bold tabular-nums">{fmt((effectiveSavings + (countMatch ? employerMatchMonthly : 0)) * 12)}/yr</p>
                 </div>
               )}
               {savings > 0 && (
@@ -679,13 +749,17 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
 
       {/* Category cards — masonry layout */}
       <div className="columns-1 md:columns-2 xl:columns-3 gap-4 space-y-4">
-        {/* Income (read-only) */}
-        <Card className="break-inside-avoid border-l-2 border-l-green-500">
+        {/* Income */}
+        <Card
+          className={cn("break-inside-avoid border-l-2 border-l-green-500", onChangeIncome && "cursor-pointer hover:border-brand/40 transition-colors")}
+          onClick={onChangeIncome ? () => setEditingIncome(true) : undefined}
+        >
           <div className="flex items-center justify-between p-4 pb-2">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-success" />
               <h3 className="text-sm font-semibold text-foreground">Income</h3>
             </div>
+            {onChangeIncome && <Edit2 size={12} className="text-muted-foreground" />}
           </div>
           <CardContent className="pt-0 pb-4 px-4">
             {isManual ? (
@@ -694,7 +768,13 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
               <>
                 <LineRow label={`Gross salary (${fmt(incomeInfo.grossAnnual)}/yr)`} amount={incomeInfo.grossAnnual / 12} />
                 {incomeInfo.pensionPct > 0 && (
-                  <LineRow label={`Pension (${incomeInfo.pensionPct}%)`} amount={incomeInfo.grossAnnual * incomeInfo.pensionPct / 100 / 12} />
+                  <LineRow label={`Your pension (${incomeInfo.pensionPct}% salary sacrifice)`} amount={incomeInfo.grossAnnual * incomeInfo.pensionPct / 100 / 12} />
+                )}
+                {incomeInfo.pensionEmployerMatchEnabled && employerMatchMonthly > 0 && (
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-xs text-success truncate mr-2">Employer pension match</span>
+                    <span className="text-xs font-medium tabular-nums text-success shrink-0">+{fmt(employerMatchMonthly)}</span>
+                  </div>
                 )}
                 {incomeInfo.studentLoan !== "none" && (
                   <div className="py-1">
@@ -714,9 +794,80 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
 
         <CategoryCard title="Essentials" color="bg-warning" accent="border-l-orange-400" items={budget.essentials} total={essentials} onEdit={() => setEditingCategory("essentials")} />
 
-        <CategoryCard title="Savings" color="bg-blue-500" accent="border-l-blue-500" items={budget.savings} total={savings} onEdit={() => setEditingCategory("savings")} />
+        <Card className="break-inside-avoid border-l-2 border-l-blue-500 cursor-pointer hover:border-brand/40 transition-colors" onClick={() => setEditingCategory("savings")}>
+          <div className="flex items-center justify-between p-4 pb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-blue-500" />
+              <h3 className="text-sm font-semibold text-foreground">Savings</h3>
+            </div>
+            <Edit2 size={12} className="text-muted-foreground" />
+          </div>
+          <CardContent className="pt-0 pb-4 px-4">
+            <div className="space-y-0.5">
+              {budget.savings.filter((i) => i.amount > 0).length > 0 ? (
+                budget.savings.filter((i) => i.amount > 0).map((item, i) => (
+                  <LineRow key={item.id || i} label={item.name} amount={toMonthly(item.amount, item.frequency)} />
+                ))
+              ) : (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setEditingCategory("savings"); }}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-brand transition-colors py-1"
+                >
+                  <Plus size={12} />
+                  Add a savings goal
+                </button>
+              )}
+              {budgetMode === "realistic" && unallocated > 0 && (
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-xs text-success truncate mr-2">Auto-saved surplus</span>
+                  <span className="text-xs font-medium tabular-nums text-success shrink-0">+{fmt(unallocated)}</span>
+                </div>
+              )}
+              {incomeInfo.pensionEmployerMatchEnabled && employerMatchMonthly > 0 && (
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-xs text-success truncate mr-2">Employer pension match</span>
+                  <span className="text-xs font-medium tabular-nums text-success shrink-0">+{fmt(employerMatchMonthly)}</span>
+                </div>
+              )}
+            </div>
+            <div className="border-t border-border mt-2 pt-2 space-y-0.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Total</span>
+                <span className="text-sm font-bold tabular-nums">
+                  {fmt(countMatch ? effectiveSavings + employerMatchMonthly : effectiveSavings)}/mo
+                </span>
+              </div>
+              {countMatch ? (
+                <p className="text-[10px] text-muted-foreground text-right">
+                  {fmt(effectiveSavings)} from take-home + {fmt(employerMatchMonthly)} employer match
+                </p>
+              ) : (
+                incomeInfo.pensionEmployerMatchEnabled && employerMatchMonthly > 0 && (
+                  <p className="text-[10px] text-muted-foreground text-right">
+                    +{fmt(employerMatchMonthly)}/mo employer match outside take-home
+                  </p>
+                )
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
-        <CategoryCard title="Lifestyle" color="bg-purple-500" accent="border-l-purple-500" items={budget.discretionary} total={lifestyle} onEdit={() => setEditingCategory("lifestyle")} />
+        <CategoryCard
+          title="Lifestyle" color="bg-purple-500" accent="border-l-purple-500"
+          items={budget.discretionary}
+          total={lifestyle}
+          displayTotal={budgetMode === "traditional" && unallocated > 0 ? effectiveWants : lifestyle}
+          onEdit={() => setEditingCategory("lifestyle")}
+          extraContent={budgetMode === "traditional" && unallocated > 0 ? (
+            <div className="mt-2 rounded-md border border-dashed border-purple-400/50 bg-purple-500/5 px-3 py-2 flex items-center justify-between gap-2">
+              <div>
+                <p className="text-[10px] font-semibold text-purple-600 dark:text-purple-400">Unallocated (auto-added)</p>
+                <p className="text-[10px] text-muted-foreground">Surplus added to wants</p>
+              </div>
+              <span className="text-xs font-bold tabular-nums text-purple-600 dark:text-purple-400 shrink-0">+{fmt(unallocated)}/mo</span>
+            </div>
+          ) : null}
+        />
       </div>
 
       {/* Cash flow pie charts */}
@@ -755,6 +906,18 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
           onChange={activeEdit.onChange}
           onClose={() => setEditingCategory(null)}
         />
+      )}
+
+      {/* Income edit dialog */}
+      {editingIncome && onChangeIncome && (
+        <Modal title="Edit Income" onClose={() => setEditingIncome(false)} maxWidth="max-w-xl">
+          <StepIncome
+            income={budget.income}
+            onChange={onChangeIncome}
+            onContinue={() => setEditingIncome(false)}
+            continueLabel="Done"
+          />
+        </Modal>
       )}
     </div>
   );

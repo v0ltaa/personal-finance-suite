@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useIsMobile } from "../lib/hooks";
 import { toMonthly, fmtMoney } from "../lib/ukTax";
 const fmt = fmtMoney;
@@ -16,13 +16,17 @@ import BudgetOverview from "../components/budget/BudgetOverview";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
-import { Save, FolderOpen, Trash2, X, Plus, FilePlus, Settings2 } from "lucide-react";
+import Modal from "../components/ui/modal";
+import { Save, FolderOpen, Trash2, FilePlus, Settings2 } from "lucide-react";
 
 // ── Default data ──
 
 const DEFAULT_INCOME = {
   grossAnnual: 0,
   pensionPct: 5,
+  pensionEmployerMatchEnabled: false,
+  pensionEmployerMatchPct: 5,
+  manualPensionMonthly: 0,
   studentLoan: "none",
   deductions: [
     { id: crypto.randomUUID(), name: "Cycle to work", amount: 0, frequency: "monthly" },
@@ -138,7 +142,11 @@ export default function BudgetDesigner() {
   );
 
   // Budget state
-  const [income, setIncome] = useState(() => initialBudget?.income || DEFAULT_INCOME);
+  const [income, setIncome] = useState(() =>
+    initialBudget?.income
+      ? { pensionEmployerMatchEnabled: false, pensionEmployerMatchPct: 5, manualPensionMonthly: 0, deductions: [], ...initialBudget.income }
+      : DEFAULT_INCOME
+  );
   const [committed, setCommitted] = useState(() =>
     initialBudget?.committed || DEFAULT_COMMITTED.map((i) => ({ ...i, id: crypto.randomUUID() }))
   );
@@ -158,7 +166,10 @@ export default function BudgetDesigner() {
   // Budget approach: "traditional" (savings before lifestyle) or "realistic" (lifestyle before savings)
   const [budgetMode, setBudgetMode] = useState(() => initialBudget?.budgetMode || "realistic");
   // Budget rule: needs/wants/savings percentages
-  const [budgetRule, setBudgetRule] = useState(() => initialBudget?.budgetRule || { needs: 50, wants: 30, savings: 20 });
+  const [budgetRule, setBudgetRule] = useState(() => ({
+    needs: 50, wants: 30, savings: 20, countEmployerMatchInSavings: true,
+    ...(initialBudget?.budgetRule || {}),
+  }));
 
   // Save dialog
   const [showSave, setShowSave] = useState(false);
@@ -166,6 +177,8 @@ export default function BudgetDesigner() {
   const [showSettings, setShowSettings] = useState(false);
   const [budgetName, setBudgetName] = useState(() => initialBudget?.name || "");
   const [loadedBudgetId, setLoadedBudgetId] = useState(() => initialBudget?.id || null);
+  // Bumped after deletes so lists re-read localStorage
+  const [budgetsVersion, setBudgetsVersion] = useState(0);
 
   // Computed totals
   const committedTotal = useMemo(() => sumMonthly(committed), [committed]);
@@ -202,6 +215,16 @@ export default function BudgetDesigner() {
     setCompletedSteps((prev) => [...new Set([...prev, step])]);
     setStep((s) => s + 1);
   }, [step]);
+  const goBack = useCallback(() => setStep((s) => Math.max(0, s - 1)), []);
+
+  // Scroll to top when moving between steps (skip initial mount)
+  const prevStepRef = useRef(step);
+  useEffect(() => {
+    if (prevStepRef.current !== step) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      prevStepRef.current = step;
+    }
+  }, [step]);
 
   // Save / Load / Reset
   const buildBudgetData = (id) => ({
@@ -236,7 +259,14 @@ export default function BudgetDesigner() {
   };
 
   const handleLoad = (budget) => {
-    setIncome(budget.income);
+    // Merge with defaults so old saved budgets pick up any new income fields
+    setIncome({
+      pensionEmployerMatchEnabled: false,
+      pensionEmployerMatchPct: 5,
+      manualPensionMonthly: 0,
+      deductions: [],
+      ...budget.income,
+    });
     setCommitted(budget.committed);
     setEssentials(budget.essentials);
     setSavings(budget.savings);
@@ -251,11 +281,15 @@ export default function BudgetDesigner() {
   };
 
   const handleDelete = (id) => {
-    const budgets = loadBudgets().filter((b) => b.id !== id);
-    saveBudgets(budgets);
+    const target = loadBudgets().find((b) => b.id === id);
+    if (!window.confirm(`Delete "${target?.name || "this budget"}"? This can't be undone.`)) return;
+    saveBudgets(loadBudgets().filter((b) => b.id !== id));
+    if (id === loadedBudgetId) setLoadedBudgetId(null);
+    setBudgetsVersion((v) => v + 1);
   };
 
   const handleReset = () => {
+    if (!window.confirm("Start a fresh budget? Unsaved changes will be lost.")) return;
     const defaults = freshDefaults();
     setIncome(defaults.income);
     setCommitted(defaults.committed);
@@ -291,7 +325,7 @@ export default function BudgetDesigner() {
           />
         );
       case 1:
-        return <StepIncome income={income} onChange={setIncome} onContinue={continueToNext} />;
+        return <StepIncome income={income} onChange={setIncome} onContinue={continueToNext} onBack={goBack} />;
       case 2:
         return (
           <StepCommitted
@@ -299,6 +333,7 @@ export default function BudgetDesigner() {
             onChange={setCommitted}
             takeHome={takeHome}
             onContinue={continueToNext}
+            onBack={goBack}
           />
         );
       case 3:
@@ -309,6 +344,7 @@ export default function BudgetDesigner() {
             takeHome={takeHome}
             committedTotal={committedTotal}
             onContinue={continueToNext}
+            onBack={goBack}
           />
         );
       case 4:
@@ -319,6 +355,7 @@ export default function BudgetDesigner() {
               onChange={setDiscretionary}
               funMoney={surplus}
               onContinue={continueToNext}
+              onBack={goBack}
             />
           );
         }
@@ -330,7 +367,9 @@ export default function BudgetDesigner() {
             surplus={surplus}
             committedTotal={committedTotal}
             essentialsTotal={essentialsTotal}
+            income={income}
             onContinue={continueToNext}
+            onBack={goBack}
           />
         );
       case 5:
@@ -345,7 +384,9 @@ export default function BudgetDesigner() {
               essentialsTotal={essentialsTotal}
               lifestyleTotal={lifestyleTotal}
               budgetMode="realistic"
+              income={income}
               onContinue={continueToNext}
+              onBack={goBack}
             />
           );
         }
@@ -355,6 +396,7 @@ export default function BudgetDesigner() {
             onChange={setDiscretionary}
             funMoney={funMoney}
             onContinue={continueToNext}
+            onBack={goBack}
           />
         );
       case 6:
@@ -372,21 +414,15 @@ export default function BudgetDesigner() {
     }
   };
 
-  const savedBudgets = (showLoad || showSave) ? loadBudgets() : [];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const savedBudgets = useMemo(() => ((showLoad || showSave) ? loadBudgets() : []), [showLoad, showSave, budgetsVersion]);
   const hasSavedBudgets = loadBudgets().length > 0;
   const isFirstStep = step === 0 && viewMode === "wizard" && completedSteps.length === 0;
 
   // ── Shared dialogs ──
   const saveDialog = showSave && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowSave(false)}>
-      <Card className="w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
-        <CardContent className="py-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-foreground">Save Budget</h3>
-            <Button variant="ghost" size="icon-sm" onClick={() => setShowSave(false)}>
-              <X size={14} />
-            </Button>
-          </div>
+    <Modal title="Save Budget" onClose={() => setShowSave(false)} maxWidth="max-w-sm">
+      <div className="space-y-4">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Budget name</label>
             <Input
@@ -419,21 +455,12 @@ export default function BudgetDesigner() {
               "Save" updates your existing budget. "Save as Copy" creates a new one.
             </p>
           )}
-        </CardContent>
-      </Card>
-    </div>
+      </div>
+    </Modal>
   );
 
   const loadDialog = showLoad && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowLoad(false)}>
-      <Card className="w-full max-w-md mx-4 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-5 pb-3 border-b border-border">
-          <h3 className="font-semibold text-foreground">Your Budgets</h3>
-          <Button variant="ghost" size="icon-sm" onClick={() => setShowLoad(false)}>
-            <X size={14} />
-          </Button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-5 pt-3">
+    <Modal title="Your Budgets" onClose={() => setShowLoad(false)} maxWidth="max-w-md" bodyClassName="pt-3">
           {savedBudgets.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">No saved budgets yet.</p>
           ) : (
@@ -456,6 +483,7 @@ export default function BudgetDesigner() {
                     variant="ghost"
                     size="icon-sm"
                     onClick={(e) => { e.stopPropagation(); handleDelete(b.id); }}
+                    aria-label={`Delete ${b.name}`}
                     className="text-muted-foreground hover:text-danger"
                   >
                     <Trash2 size={14} />
@@ -464,9 +492,7 @@ export default function BudgetDesigner() {
               ))}
             </div>
           )}
-        </div>
-      </Card>
-    </div>
+    </Modal>
   );
 
   const BUDGET_RULE_PRESETS = [
@@ -478,16 +504,8 @@ export default function BudgetDesigner() {
   ];
 
   const settingsDialog = showSettings && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowSettings(false)}>
-      <Card className="w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
-        <CardContent className="py-5 space-y-5">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-foreground">Budget Settings</h3>
-            <Button variant="ghost" size="icon-sm" onClick={() => setShowSettings(false)}>
-              <X size={14} />
-            </Button>
-          </div>
-
+    <Modal title="Budget Settings" onClose={() => setShowSettings(false)} maxWidth="max-w-sm">
+      <div className="space-y-5">
           {/* Budget approach */}
           <div className="space-y-2">
             <label className="text-xs font-medium text-muted-foreground">Budget approach</label>
@@ -598,9 +616,29 @@ export default function BudgetDesigner() {
               })}
             </div>
           </div>
-        </CardContent>
-      </Card>
-    </div>
+
+          {/* Employer match in savings % */}
+          <div className="flex items-center justify-between gap-3 pt-1 border-t border-border">
+            <div>
+              <p className="text-xs font-medium text-foreground">Count employer pension match in savings %</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Includes your employer's contribution when calculating your savings rate</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setBudgetRule((r) => ({ ...r, countEmployerMatchInSavings: !r.countEmployerMatchInSavings }))}
+              className={cn(
+                "relative w-10 h-6 rounded-full transition-colors shrink-0",
+                budgetRule.countEmployerMatchInSavings ? "bg-brand" : "bg-muted"
+              )}
+            >
+              <span className={cn(
+                "absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform",
+                budgetRule.countEmployerMatchInSavings ? "translate-x-4" : "translate-x-0.5"
+              )} />
+            </button>
+          </div>
+      </div>
+    </Modal>
   );
 
   // Overview mode — full-width grid
@@ -614,6 +652,7 @@ export default function BudgetDesigner() {
           onLoad={() => setShowLoad(true)}
           onReset={handleReset}
           onSettings={() => setShowSettings(true)}
+          onChangeIncome={setIncome}
           onChangeCommitted={setCommitted}
           onChangeEssentials={setEssentials}
           onChangeSavings={setSavings}
@@ -685,6 +724,9 @@ export default function BudgetDesigner() {
       <div className={cn("mt-4", !isMobile && step < 6 && "flex gap-6")}>
         {/* Step content */}
         <div className={cn("flex-1 min-w-0", !isMobile && step < 6 && "max-w-2xl")}>
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">
+            Step {step + 1} of {stepLabels.length}
+          </p>
           {renderStep()}
         </div>
 

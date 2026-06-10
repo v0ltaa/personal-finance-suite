@@ -5,7 +5,7 @@ import { cn } from "../../lib/utils";
 import { toMonthly, fmtMoney } from "../../lib/ukTax";
 import BudgetLineItem from "./BudgetLineItem";
 import Tip from "../Tip";
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus } from "lucide-react";
 
 const fmt = fmtMoney;
 
@@ -41,7 +41,7 @@ function LisaIndicator({ monthlyAmount }) {
   );
 }
 
-export default function StepSavings({ items, onChange, takeHome, surplus, committedTotal, essentialsTotal, lifestyleTotal = 0, budgetMode = "traditional", onContinue }) {
+export default function StepSavings({ items, onChange, takeHome, surplus, committedTotal, essentialsTotal, lifestyleTotal = 0, budgetMode = "traditional", income, onContinue, onBack }) {
   const isRealistic = budgetMode === "realistic";
   const total = items.reduce((s, i) => s + toMonthly(i.amount, i.frequency), 0);
   const savingsRate = takeHome > 0 ? (total / takeHome) * 100 : 0;
@@ -120,6 +120,29 @@ export default function StepSavings({ items, onChange, takeHome, surplus, commit
           </CardContent>
         </Card>
       )}
+
+      {/* Employer pension match — shown separately as it's free money outside the take-home budget */}
+      {(() => {
+        if (!income?.pensionEmployerMatchEnabled) return null;
+        const isManual = income.mode === "manual";
+        const matchAmt = isManual
+          ? (income.pensionEmployerMatchMonthly ?? income.manualPensionMonthly ?? 0)
+          : (income.grossAnnual ?? 0) * (income.pensionEmployerMatchPct ?? 0) / 100 / 12;
+        if (matchAmt <= 0) return null;
+        return (
+          <div className="rounded-lg border border-dashed border-success/50 bg-success/5 px-4 py-3 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold text-success">Employer pension match</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Matched by your employer — added to your pension on top of your take-home
+              </p>
+            </div>
+            <p className="text-sm font-bold tabular-nums text-success shrink-0">
+              +{fmt(matchAmt)}/mo
+            </p>
+          </div>
+        );
+      })()}
 
       <div className="space-y-0.5 border border-border rounded-lg px-3 py-2">
         {items.map((item) => {
@@ -233,7 +256,13 @@ export default function StepSavings({ items, onChange, takeHome, surplus, commit
         </Card>
       )}
 
-      <div className="flex justify-end pt-2">
+      <div className="flex justify-between gap-2 pt-2">
+        {onBack ? (
+          <Button variant="outline" size="lg" onClick={onBack} className="gap-2">
+            <ArrowLeft size={16} />
+            Back
+          </Button>
+        ) : <span />}
         <Button variant="brand" size="lg" onClick={onContinue} className="gap-2">
           Continue
           <ArrowRight size={16} />

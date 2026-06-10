@@ -100,10 +100,10 @@ export const STUDENT_LOAN_OPTIONS = [
 ];
 
 export const FREQUENCY_OPTIONS = [
-  { value: "weekly", label: "Weekly", multiplier: 52 / 12 },
-  { value: "monthly", label: "Monthly", multiplier: 1 },
-  { value: "quarterly", label: "Quarterly", multiplier: 1 / 3 },
-  { value: "annual", label: "Annual", multiplier: 1 / 12 },
+  { value: "weekly", label: "Weekly", short: "wk", multiplier: 52 / 12 },
+  { value: "monthly", label: "Monthly", short: "mo", multiplier: 1 },
+  { value: "quarterly", label: "Quarterly", short: "qtr", multiplier: 1 / 3 },
+  { value: "annual", label: "Annual", short: "yr", multiplier: 1 / 12 },
 ];
 
 export function toMonthly(amount, frequency) {

@@ -13,7 +13,7 @@ function effectiveMonthly(item) {
 }
 import BudgetLineItem from "./BudgetLineItem";
 import Tip from "../Tip";
-import { ArrowRight, ChevronDown, ChevronUp, Plus } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Plus } from "lucide-react";
 
 const fmt = fmtMoney;
 
@@ -59,7 +59,7 @@ function CategoryGroup({ category, items, onItemChange, onItemRemove, onAddItem,
   );
 }
 
-export default function StepCommitted({ items, onChange, takeHome, onContinue }) {
+export default function StepCommitted({ items, onChange, takeHome, onContinue, onBack }) {
   const categories = [...new Set(items.map((i) => i.category))];
   const total = items.reduce((s, i) => s + effectiveMonthly(i), 0);
   const pctOfTakeHome = takeHome > 0 ? (total / takeHome) * 100 : 0;
@@ -169,7 +169,13 @@ export default function StepCommitted({ items, onChange, takeHome, onContinue })
         </CardContent>
       </Card>
 
-      <div className="flex justify-end pt-2">
+      <div className="flex justify-between gap-2 pt-2">
+        {onBack ? (
+          <Button variant="outline" size="lg" onClick={onBack} className="gap-2">
+            <ArrowLeft size={16} />
+            Back
+          </Button>
+        ) : <span />}
         <Button variant="brand" size="lg" onClick={onContinue} className="gap-2">
           Continue
           <ArrowRight size={16} />

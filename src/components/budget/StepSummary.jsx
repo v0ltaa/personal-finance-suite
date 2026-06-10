@@ -104,6 +104,17 @@ export default function StepSummary({ budget, onEdit, onSave, onReset, onViewOve
   // Project to age 50, assume user is ~25 (25 years of contributions)
   const lisaProj = lisaMonthly > 0 ? compound(Math.min(lisaMonthly, 333.33) * 1.25, 25) : 0;
 
+  // Edit buttons — step indices depend on budget mode (steps 4/5 swap)
+  const isRealistic = budget.budgetMode === "realistic";
+  const editTargets = [
+    { label: "Income", step: 1 },
+    { label: "Committed", step: 2 },
+    { label: "Essentials", step: 3 },
+    ...(isRealistic
+      ? [{ label: "Lifestyle", step: 4 }, { label: "Savings", step: 5 }]
+      : [{ label: "Savings", step: 4 }, { label: "Lifestyle", step: 5 }]),
+  ];
+
   // Housing % check
   const housingItem = budget.committed.find(
     (i) => i.category === "Housing" && (i.name === "Rent" || i.name === "Mortgage")
@@ -313,16 +324,16 @@ export default function StepSummary({ budget, onEdit, onSave, onReset, onViewOve
             </Button>
           </div>
           <div className="flex flex-wrap gap-2 mt-3">
-            {["Income", "Committed", "Essentials", "Savings", "Lifestyle"].map((step, i) => (
+            {editTargets.map(({ label, step }) => (
               <Button
-                key={i}
+                key={label}
                 variant="ghost"
                 size="sm"
-                onClick={() => onEdit(i)}
+                onClick={() => onEdit(step)}
                 className="gap-1 text-muted-foreground"
               >
                 <Edit2 size={12} />
-                Edit {step}
+                Edit {label}
               </Button>
             ))}
           </div>
