@@ -64,11 +64,18 @@ function RingGauge({ label, actual, target, isMin, amount, targetAmount, accentC
 
 // ── Read-only line ──
 
-function LineRow({ label, amount }) {
+function LineRow({ label, amount, pct }) {
   return (
     <div className="flex items-center justify-between py-1">
       <span className="text-xs text-muted-foreground truncate mr-2">{label}</span>
-      <span className="text-xs font-medium tabular-nums shrink-0">{fmt(amount)}</span>
+      <div className="flex items-center gap-1.5 shrink-0">
+        {pct != null && (
+          <span className="text-[10px] tabular-nums text-muted-foreground/70 bg-muted px-1 py-0.5 rounded">
+            {pct.toFixed(1)}% gross
+          </span>
+        )}
+        <span className="text-xs font-medium tabular-nums">{fmt(amount)}</span>
+      </div>
     </div>
   );
 }
@@ -274,7 +281,7 @@ function CategoryCard({ title, color, accent, items, total, displayTotal, onEdit
 
 // ── Committed card (read-only, grouped) ──
 
-function CommittedCard({ items, total, onEdit }) {
+function CommittedCard({ items, total, onEdit, grossMonthly }) {
   const groupedFilled = useMemo(() => {
     const groups = {};
     items.forEach((item) => {
@@ -301,9 +308,12 @@ function CommittedCard({ items, total, onEdit }) {
         {hasItems ? Object.entries(groupedFilled).map(([cat, catItems]) => (
           <div key={cat}>
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mt-1.5 mb-0.5">{cat}</p>
-            {catItems.map((item) => (
-              <LineRow key={item.id} label={item.name} amount={effectiveMonthly(item)} />
-            ))}
+            {catItems.map((item) => {
+              const monthly = effectiveMonthly(item);
+              const isRent = item.name.toLowerCase().includes("rent");
+              const pct = isRent && grossMonthly > 0 ? (monthly / grossMonthly) * 100 : null;
+              return <LineRow key={item.id} label={item.name} amount={monthly} pct={pct} />;
+            })}
           </div>
         )) : (
           <p className="text-xs text-muted-foreground italic py-1">No items yet</p>
@@ -790,7 +800,7 @@ export default function BudgetOverview({ budget, budgetName, onSave, onLoad, onR
           </CardContent>
         </Card>
 
-        <CommittedCard items={budget.committed} total={committed} onEdit={() => setEditingCategory("committed")} />
+        <CommittedCard items={budget.committed} total={committed} onEdit={() => setEditingCategory("committed")} grossMonthly={isManual ? null : (incomeInfo.grossAnnual ?? 0) / 12} />
 
         <CategoryCard title="Essentials" color="bg-warning" accent="border-l-orange-400" items={budget.essentials} total={essentials} onEdit={() => setEditingCategory("essentials")} />
 

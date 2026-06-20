@@ -244,3 +244,15 @@ export function getLandmarkCategories(user) {
 }
 
 export { DEFAULT_LANDMARK_CATEGORIES };
+
+// ── Gaff Tracker: Field savings config (stored in user metadata) ──
+// Maps custom field id → saving amount (in GBP). Applies when the field is "yes"/checked.
+
+export async function saveFieldSavings(savings) {
+  if (!supabase) return { error: "Not configured" };
+  return supabase.auth.updateUser({ data: { field_savings: savings } });
+}
+
+export function getFieldSavings(user) {
+  return user?.user_metadata?.field_savings || {};
+}

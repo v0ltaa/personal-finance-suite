@@ -56,6 +56,7 @@ import {
   saveWorkplaceAddress, getWorkplaceAddress,
   saveCostPerMile, getCostPerMile,
   getLandmarks, getLandmarkCategories,
+  saveFieldSavings, getFieldSavings,
   loadPropertyPhotos, savePropertyPhoto, updatePropertyPhoto, deletePropertyPhoto,
   uploadPropertyPhotoMulti, setMainPhoto,
 } from "../lib/supabase";
@@ -898,12 +899,28 @@ const isCustomFieldFilled = (field, value) => {
   return value !== undefined && value !== null && value !== "";
 };
 
+// Returns total savings (GBP) from active checkbox/maybe fields that have a saving_value set
+function calcFieldSavings(customFields, customValues, fieldSavings) {
+  return customFields.reduce((sum, f) => {
+    const saving = Number(fieldSavings?.[f.id]);
+    if (!saving) return sum;
+    const val = customValues?.[f.id];
+    const active = (f.field_type === "checkbox" && val === true) || (f.field_type === "maybe" && val === "yes");
+    return active ? sum + saving : sum;
+  }, 0);
+}
+
 // ─── Property detail modal (Moda Living layout) ────────────────────────────────
-export function PropertyDetailModal({ property: p, customFields, workplaceAddress, landmarks, costPerMile, onEdit, onClose, mobile, userId, displayCurrency, rates, onMainPhotoChange, onMarkSold }) {
+export function PropertyDetailModal({ property: p, customFields, workplaceAddress, landmarks, costPerMile, onEdit, onClose, mobile, userId, displayCurrency, rates, onMainPhotoChange, onMarkSold, fieldSavings }) {
   const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
   const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
     ? fmtCurrency(gbp, displayCurrency, rates)
     : fmt(gbp);
+  const modalSuffix = p.listing_type === "rent" ? "pcm" : "";
+  const modalDiscountedPrice = p.custom_values?.__discounted_price || null;
+  const modalTotalSavings = calcFieldSavings(customFields, p.custom_values, fieldSavings);
+  const modalEffectiveBase = modalDiscountedPrice || p.price;
+  const modalEffectivePrice = modalEffectiveBase > 0 && modalTotalSavings > 0 ? modalEffectiveBase - modalTotalSavings : null;
 
   // Live custom values — may be updated by auto-calculation below
   const [liveCV, setLiveCV] = useState(p.custom_values || {});
@@ -1033,8 +1050,21 @@ export function PropertyDetailModal({ property: p, customFields, workplaceAddres
             </div>
 
             {/* Price */}
-            <div style={{ fontFamily: fonts.sans, fontSize: 34, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 16 }}>
-              {p.price > 0 ? `${fmtPrice(p.price)}${p.listing_type === "rent" ? "pcm" : ""}` : "Price TBC"}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: fonts.sans, fontSize: 34, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+                {p.price > 0 ? `${fmtPrice(p.price)}${modalSuffix}` : "Price TBC"}
+              </div>
+              {modalDiscountedPrice > 0 && (
+                <div style={{ fontFamily: fonts.sans, fontSize: 15, fontWeight: 600, color: "#6ee7b7", marginTop: 5 }}>
+                  {fmtPrice(modalDiscountedPrice)}{modalSuffix} <span style={{ fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.06em" }}>offered</span>
+                </div>
+              )}
+              {modalEffectivePrice > 0 && (
+                <div style={{ fontFamily: fonts.sans, fontSize: 15, fontWeight: 600, color: "#fbbf24", marginTop: 3 }}>
+                  {fmtPrice(modalEffectivePrice)}{modalSuffix} <span style={{ fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.06em" }}>effective</span>
+                  {modalTotalSavings > 0 && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginLeft: 5 }}>saves {fmtPrice(modalTotalSavings)}</span>}
+                </div>
+              )}
             </div>
 
             {/* Name + location */}
@@ -1332,12 +1362,17 @@ export function PropertyDetailModal({ property: p, customFields, workplaceAddres
 }
 
 // ─── Property card (Moda Living inspired) ──────────────────────────────────────
-function PropertyCard({ property: p, customFields, workplaceAddress, landmarks, costPerMile, onEdit, onDelete, mobile, userId, displayCurrency, rates, onMainPhotoChange, onMarkSold }) {
+function PropertyCard({ property: p, customFields, workplaceAddress, landmarks, costPerMile, onEdit, onDelete, onDuplicate, mobile, userId, displayCurrency, rates, onMainPhotoChange, onMarkSold, fieldSavings }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
   const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
     ? fmtCurrency(gbp, displayCurrency, rates)
     : fmt(gbp);
+  const suffix = p.listing_type === "rent" ? "pcm" : "";
+  const discountedPrice = p.custom_values?.__discounted_price || null;
+  const totalSavings = calcFieldSavings(customFields, p.custom_values, fieldSavings);
+  const effectiveBase = discountedPrice || p.price;
+  const effectivePrice = effectiveBase > 0 && totalSavings > 0 ? effectiveBase - totalSavings : null;
 
   useEffect(() => { injectCardStyles(); }, []);
 
@@ -1385,8 +1420,21 @@ function PropertyCard({ property: p, customFields, workplaceAddress, landmarks, 
         {/* Card body */}
         <div style={{ padding: "18px 20px 0" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-            <div style={{ fontFamily: fonts.sans, fontSize: mobile ? 22 : 26, fontWeight: 700, color: C.text, letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-              {p.price > 0 ? `${fmtPrice(p.price)}${p.listing_type === "rent" ? "pcm" : ""}` : "Price TBC"}
+            <div>
+              <div style={{ fontFamily: fonts.sans, fontSize: mobile ? 22 : 26, fontWeight: 700, color: C.text, letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+                {p.price > 0 ? `${fmtPrice(p.price)}${suffix}` : "Price TBC"}
+              </div>
+              {discountedPrice > 0 && (
+                <div style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, color: C.green, marginTop: 3 }}>
+                  {fmtPrice(discountedPrice)}{suffix} <span style={{ fontSize: 10, fontWeight: 400, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.06em" }}>offered</span>
+                </div>
+              )}
+              {effectivePrice > 0 && (
+                <div style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, color: C.accent, marginTop: 2 }}>
+                  {fmtPrice(effectivePrice)}{suffix} <span style={{ fontSize: 10, fontWeight: 400, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.06em" }}>effective</span>
+                  {totalSavings > 0 && <span style={{ fontSize: 10, color: C.textLight, marginLeft: 4 }}>(−{fmtPrice(totalSavings)})</span>}
+                </div>
+              )}
             </div>
             {p.property_type && (
               <span style={{ border: `1.5px solid ${C.text}`, borderRadius: 20, padding: "4px 12px", fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, color: C.text, textTransform: "capitalize", whiteSpace: "nowrap", marginLeft: 12, flexShrink: 0 }}>
@@ -1424,6 +1472,9 @@ function PropertyCard({ property: p, customFields, workplaceAddress, landmarks, 
           <button onClick={() => setDetailOpen(true)} style={{ flex: 1, padding: "10px", border: "none", borderRight: `1px solid ${C.borderLight}`, background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.textMid }}>
             Details
           </button>
+          <button onClick={() => onDuplicate(p)} style={{ flex: 1, padding: "10px", border: "none", borderRight: `1px solid ${C.borderLight}`, background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.textMid }}>
+            Duplicate
+          </button>
           <button onClick={() => { if (confirm(`Delete "${p.name}"?`)) onDelete(p.id); }} style={{ flex: 1, padding: "10px", border: "none", background: "transparent", cursor: "pointer", fontFamily: fonts.sans, fontSize: 11, fontWeight: 600, color: C.red }}>
             Remove
           </button>
@@ -1445,6 +1496,7 @@ function PropertyCard({ property: p, customFields, workplaceAddress, landmarks, 
           rates={rates}
           onMainPhotoChange={onMainPhotoChange}
           onMarkSold={onMarkSold}
+          fieldSavings={fieldSavings}
         />
       )}
     </>
@@ -1458,6 +1510,7 @@ const EMPTY_FORM = {
   custom_values: {},
   // virtual fields — stored inside custom_values on save
   _price_currency: "GBP",
+  _discounted_price: "",
   _commute_walk: "", _commute_drive: "", _commute_cycle: "", _commute_transit: "",
   _commute_petrol: "", _commute_transport: "",
 };
@@ -1702,6 +1755,7 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
     size: property.size || "",
     price: existingPriceLocal,
     _price_currency: existingCurrency,
+    _discounted_price:  property.custom_values?.__discounted_price != null ? property.custom_values.__discounted_price : "",
     _commute_walk:      property.custom_values?.__commute_walk      || "",
     _commute_drive:     property.custom_values?.__commute_drive     || "",
     _commute_cycle:     property.custom_values?.__commute_cycle     || "",
@@ -1795,10 +1849,18 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
     // Remove old single-distance field if present
     delete customValues.__commute_distance;
 
+    if (form._discounted_price !== "" && form._discounted_price != null) {
+      const discLocal = Number(form._discounted_price);
+      customValues.__discounted_price = Math.round(toGBP(discLocal, priceCurrency, rates));
+    } else {
+      delete customValues.__discounted_price;
+    }
+
     const payload = { ...form, size: form.size === "" ? null : Number(form.size), price: priceGBP, custom_values: customValues };
     delete payload.id; delete payload.user_id; delete payload.created_at; delete payload.updated_at;
     // Remove virtual fields from payload
     delete payload._price_currency;
+    delete payload._discounted_price;
     delete payload._commute_walk; delete payload._commute_drive;
     delete payload._commute_cycle; delete payload._commute_transit;
     delete payload._commute_petrol; delete payload._commute_transport;
@@ -1928,6 +1990,14 @@ function PropertyDialog({ property, customFields, defaultListingType, onSave, on
                   ≈ {fmt(Math.round(toGBP(Number(form.price), form._price_currency, rates)))} GBP
                 </div>
               )}
+              <div style={{ marginTop: 10 }}>
+                <label style={{ ...s.label, fontSize: 9 }}>Discounted / Offered Price (optional)</label>
+                <div style={{ display: "flex", alignItems: "center", borderBottom: `1.5px solid ${C.border}`, padding: "6px 0" }}>
+                  <span style={{ color: C.textLight, fontFamily: fonts.serif, marginRight: 4 }}>{currencySymbol(form._price_currency)}</span>
+                  <input type="number" min={0} value={form._discounted_price} onChange={e => set("_discounted_price", e.target.value)} placeholder="e.g. 1350" style={{ background: "transparent", border: "none", outline: "none", fontFamily: fonts.serif, fontSize: 14, color: C.text, width: "100%" }} />
+                </div>
+                <div style={{ fontSize: 10, color: C.textLight, fontFamily: fonts.sans, marginTop: 3, lineHeight: 1.4 }}>Shown below the asking price — use for a negotiated or offered price.</div>
+              </div>
             </div>
             <div>
               <label style={s.label}>Listing Link</label>
@@ -2236,7 +2306,7 @@ function isNearestField(field) {
   return field.field_type?.startsWith("nearest");
 }
 
-function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpdated, workplaceAddress, onWorkplaceChange, costPerMile, onCostPerMileChange, mobile, open, onToggle, landmarkCategories }) {
+function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpdated, workplaceAddress, onWorkplaceChange, costPerMile, onCostPerMileChange, mobile, open, onToggle, landmarkCategories, fieldSavings, onFieldSavingsChange }) {
   const [wpEdit, setWpEdit] = useState(workplaceAddress);
   const [wpSaving, setWpSaving] = useState(false);
   const [cpmEdit, setCpmEdit] = useState(costPerMile);
@@ -2356,30 +2426,58 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpda
               <p style={{ fontSize: 13, fontFamily: fonts.serif, color: C.textMid, fontStyle: "italic", margin: 0 }}>No custom fields yet. Click "+ Add" to create one.</p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {customFields.map(f => (
-                <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: `1px solid ${C.borderLight}` }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {editingFieldId === f.id ? (
-                      <input
-                        autoFocus
-                        value={editingFieldName}
-                        onChange={e => setEditingFieldName(e.target.value)}
-                        onBlur={() => handleSaveFieldName(f.id)}
-                        onKeyDown={e => { if (e.key === "Enter") handleSaveFieldName(f.id); if (e.key === "Escape") setEditingFieldId(null); }}
-                        style={{ ...s.textInput, fontSize: 14, fontFamily: fonts.serif, width: "auto", minWidth: 120, maxWidth: 260 }}
-                      />
-                    ) : (
-                      <span
-                        onClick={() => { setEditingFieldId(f.id); setEditingFieldName(f.name); }}
-                        title="Click to rename"
-                        style={{ fontFamily: fonts.serif, fontSize: 14, color: C.text, cursor: "text", borderBottom: `1px dashed ${C.borderLight}` }}
-                      >{f.name}</span>
+              {customFields.map(f => {
+                const canSave = f.field_type === "checkbox" || f.field_type === "maybe";
+                const savingVal = fieldSavings?.[f.id] ?? "";
+                return (
+                  <div key={f.id} style={{ padding: "8px 0", borderBottom: `1px solid ${C.borderLight}` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        {editingFieldId === f.id ? (
+                          <input
+                            autoFocus
+                            value={editingFieldName}
+                            onChange={e => setEditingFieldName(e.target.value)}
+                            onBlur={() => handleSaveFieldName(f.id)}
+                            onKeyDown={e => { if (e.key === "Enter") handleSaveFieldName(f.id); if (e.key === "Escape") setEditingFieldId(null); }}
+                            style={{ ...s.textInput, fontSize: 14, fontFamily: fonts.serif, width: "auto", minWidth: 120, maxWidth: 260 }}
+                          />
+                        ) : (
+                          <span
+                            onClick={() => { setEditingFieldId(f.id); setEditingFieldName(f.name); }}
+                            title="Click to rename"
+                            style={{ fontFamily: fonts.serif, fontSize: 14, color: C.text, cursor: "text", borderBottom: `1px dashed ${C.borderLight}` }}
+                          >{f.name}</span>
+                        )}
+                        <span style={{ fontSize: 9, fontFamily: fonts.sans, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.1em", marginLeft: 8 }}>{isNearestField(f) ? `Nearest · ${nearestCategory(f) || "Landmark"}` : (FIELD_TYPES.find(t => t.value === f.field_type)?.label || f.field_type)}</span>
+                      </div>
+                      <button onClick={async () => { await deleteCustomField(f.id); onFieldDeleted(f.id); }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 16, padding: "0 4px", flexShrink: 0 }}>×</button>
+                    </div>
+                    {canSave && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                        <span style={{ fontSize: 10, fontFamily: fonts.sans, color: C.textLight, whiteSpace: "nowrap" }}>£ saving when Yes:</span>
+                        <div style={{ display: "flex", alignItems: "center", borderBottom: `1px solid ${C.border}`, maxWidth: 90 }}>
+                          <span style={{ fontSize: 12, color: C.textLight, fontFamily: fonts.serif, paddingRight: 3 }}>£</span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={savingVal}
+                            onChange={e => {
+                              const next = { ...(fieldSavings || {}), [f.id]: e.target.value === "" ? undefined : Number(e.target.value) };
+                              if (e.target.value === "") delete next[f.id];
+                              onFieldSavingsChange(next);
+                            }}
+                            placeholder="0"
+                            style={{ background: "transparent", border: "none", outline: "none", fontFamily: fonts.sans, fontSize: 12, color: C.text, width: 60, padding: "3px 0" }}
+                          />
+                        </div>
+                        <span style={{ fontSize: 10, color: C.textLight, fontFamily: fonts.sans }}>pcm</span>
+                      </div>
                     )}
-                    <span style={{ fontSize: 9, fontFamily: fonts.sans, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.1em", marginLeft: 8 }}>{isNearestField(f) ? `Nearest · ${nearestCategory(f) || "Landmark"}` : (FIELD_TYPES.find(t => t.value === f.field_type)?.label || f.field_type)}</span>
                   </div>
-                  <button onClick={async () => { await deleteCustomField(f.id); onFieldDeleted(f.id); }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 16, padding: "0 4px", flexShrink: 0 }}>×</button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -2494,6 +2592,7 @@ export default function GaffTracker() {
   const [workplaceAddress, setWorkplaceAddress] = useState(getWorkplaceAddress(user));
   const [costPerMile, setCostPerMile] = useState(() => getCostPerMile(user));
   const [landmarks, setLandmarks] = useState(() => getLandmarks(user));
+  const [fieldSavings, setFieldSavings] = useState(() => getFieldSavings(user));
   const [landmarkCategories, setLandmarkCategories] = useState(() => getLandmarkCategories(user));
   const [displayCurrency, setDisplayCurrencyState] = useState(getDisplayCurrency);
   const [rates, setRates] = useState(null);
@@ -2516,6 +2615,7 @@ export default function GaffTracker() {
       setWorkplaceAddress(getWorkplaceAddress(user));
       setCostPerMile(getCostPerMile(user));
       setLandmarks(getLandmarks(user));
+      setFieldSavings(getFieldSavings(user));
       setLandmarkCategories(getLandmarkCategories(user));
     }
   }, [user]);
@@ -2552,6 +2652,12 @@ export default function GaffTracker() {
   const handleDelete = async (id) => {
     await deleteProperty(id);
     setProperties(ps => ps.filter(p => p.id !== id));
+  };
+
+  const handleDuplicate = async (property) => {
+    const { id, created_at, updated_at, user_id, ...fields } = property;
+    const { data, error } = await saveProperty({ ...fields, name: `${fields.name} (copy)` });
+    if (!error && data) setProperties(ps => [data, ...ps]);
   };
 
   const handleMarkSold = async (property, soldAt) => {
@@ -2686,6 +2792,8 @@ export default function GaffTracker() {
         costPerMile={costPerMile}
         onCostPerMileChange={setCostPerMile}
         landmarkCategories={landmarkCategories}
+        fieldSavings={fieldSavings}
+        onFieldSavingsChange={async (next) => { setFieldSavings(next); await saveFieldSavings(next); }}
         mobile={mobile}
         open={settingsOpen}
         onToggle={() => setSettingsOpen(v => !v)}
@@ -2726,7 +2834,9 @@ export default function GaffTracker() {
               costPerMile={costPerMile}
               onEdit={prop => { setEditingProperty(prop); setDialogOpen(true); }}
               onDelete={handleDelete}
+              onDuplicate={handleDuplicate}
               onMarkSold={handleMarkSold}
+              fieldSavings={fieldSavings}
               mobile={mobile}
               userId={user?.id}
               displayCurrency={displayCurrency}

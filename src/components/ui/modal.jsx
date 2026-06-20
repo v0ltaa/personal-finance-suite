@@ -11,6 +11,8 @@ const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [ta
  */
 export default function Modal({ title, ariaLabel, onClose, children, maxWidth = "max-w-sm", headerExtra, bodyClassName }) {
   const dialogRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     const previouslyFocused = document.activeElement;
@@ -25,7 +27,7 @@ export default function Modal({ title, ariaLabel, onClose, children, maxWidth = 
     const handleKey = (e) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
       } else if (e.key === "Tab") {
         const focusables = dialogRef.current?.querySelectorAll(FOCUSABLE);
         if (!focusables?.length) return;
@@ -46,7 +48,7 @@ export default function Modal({ title, ariaLabel, onClose, children, maxWidth = 
       document.removeEventListener("keydown", handleKey);
       previouslyFocused?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div
