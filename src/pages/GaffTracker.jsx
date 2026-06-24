@@ -63,6 +63,18 @@ import {
 
 import { geocodeAddress, getRouteDistance, mapsDirectionUrl, haversineKm } from "../lib/geo";
 
+// ─── Birmingham Council Tax 2024/25 ──────────────────────────────────────────
+const BIRMINGHAM_CT_BANDS = {
+  A: 1568.78, B: 1830.25, C: 2091.71, D: 2353.17,
+  E: 2876.09, F: 3399.02, G: 3921.96, H: 4706.34,
+};
+
+function getMonthlyCouncilTax(band, discount25) {
+  if (!band || !BIRMINGHAM_CT_BANDS[band]) return 0;
+  const annual = BIRMINGHAM_CT_BANDS[band];
+  return Math.round((discount25 ? annual * 0.75 : annual) / 12);
+}
+
 // ─── Inject hover-animation CSS once ─────────────────────────────────────────
 let _stylesInjected = false;
 function injectCardStyles() {
@@ -1362,7 +1374,7 @@ export function PropertyDetailModal({ property: p, customFields, workplaceAddres
 }
 
 // ─── Property card (Moda Living inspired) ──────────────────────────────────────
-function PropertyCard({ property: p, customFields, workplaceAddress, landmarks, costPerMile, onEdit, onDelete, onDuplicate, mobile, userId, displayCurrency, rates, onMainPhotoChange, onMarkSold, fieldSavings }) {
+function PropertyCard({ property: p, customFields, workplaceAddress, landmarks, costPerMile, onEdit, onDelete, onDuplicate, onUpdate, mobile, userId, displayCurrency, rates, onMainPhotoChange, onMarkSold, fieldSavings, councilTaxDiscount25 }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const sizePerRoom = p.size && p.bedrooms > 0 ? (p.size / p.bedrooms).toFixed(1) : null;
   const fmtPrice = (gbp) => rates && displayCurrency && displayCurrency !== "GBP"
@@ -1373,6 +1385,22 @@ function PropertyCard({ property: p, customFields, workplaceAddress, landmarks, 
   const totalSavings = calcFieldSavings(customFields, p.custom_values, fieldSavings);
   const effectiveBase = discountedPrice || p.price;
   const effectivePrice = effectiveBase > 0 && totalSavings > 0 ? effectiveBase - totalSavings : null;
+
+  const ctBand = p.custom_values?.__council_tax_band || "";
+  const ctMonthly = getMonthlyCouncilTax(ctBand, councilTaxDiscount25);
+  // bestBase: effective (offered−savings) > offered > list price
+  const bestBase = effectivePrice > 0 ? effectivePrice : (Number(effectiveBase) > 0 ? Number(effectiveBase) : Number(p.price));
+  const totalWithCT = ctMonthly > 0 && bestBase > 0 ? bestBase + ctMonthly : null;
+  // effectiveWithCT only shown when there's something beyond list price (offered or savings) + CT
+  const hasNegotiated = effectivePrice > 0 || (discountedPrice > 0 && Number(discountedPrice) !== p.price);
+  const effectiveWithCT = ctMonthly > 0 && hasNegotiated ? totalWithCT : null;
+
+  const handleCtBandChange = async (band) => {
+    const newCustomValues = { ...(p.custom_values || {}), __council_tax_band: band || undefined };
+    if (!band) delete newCustomValues.__council_tax_band;
+    await updateProperty(p.id, { custom_values: newCustomValues });
+    onUpdate?.(p.id, { custom_values: newCustomValues });
+  };
 
   useEffect(() => { injectCardStyles(); }, []);
 
@@ -1421,12 +1449,28 @@ function PropertyCard({ property: p, customFields, workplaceAddress, landmarks, 
         <div style={{ padding: "18px 20px 0" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
             <div>
+              {/* Big number: offered+CT > base+CT > price */}
               <div style={{ fontFamily: fonts.sans, fontSize: mobile ? 22 : 26, fontWeight: 700, color: C.text, letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-                {p.price > 0 ? `${fmtPrice(p.price)}${suffix}` : "Price TBC"}
+                {effectiveWithCT > 0
+                  ? `${fmtPrice(effectiveWithCT)}${suffix}`
+                  : totalWithCT > 0
+                    ? `${fmtPrice(totalWithCT)}${suffix}`
+                    : p.price > 0 ? `${fmtPrice(p.price)}${suffix}` : "Price TBC"}
               </div>
+              {(effectiveWithCT > 0 || totalWithCT > 0) && (
+                <div style={{ fontSize: 10, fontFamily: fonts.sans, color: C.textLight, marginTop: 2, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                  incl. council tax
+                </div>
+              )}
+              {/* Smaller numbers */}
+              {p.price > 0 && (effectiveWithCT > 0 || totalWithCT > 0) && (
+                <div style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, color: C.textMid, marginTop: 5 }}>
+                  {fmtPrice(p.price)}{suffix} <span style={{ fontSize: 10, fontWeight: 400, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.06em" }}>rent</span>
+                </div>
+              )}
               {discountedPrice > 0 && (
-                <div style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, color: C.green, marginTop: 3 }}>
-                  {fmtPrice(discountedPrice)}{suffix} <span style={{ fontSize: 10, fontWeight: 400, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.06em" }}>offered</span>
+                <div style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, color: C.green, marginTop: 2 }}>
+                  {fmtPrice(Number(discountedPrice))}{suffix} <span style={{ fontSize: 10, fontWeight: 400, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.06em" }}>offered</span>
                 </div>
               )}
               {effectivePrice > 0 && (
@@ -1435,12 +1479,39 @@ function PropertyCard({ property: p, customFields, workplaceAddress, landmarks, 
                   {totalSavings > 0 && <span style={{ fontSize: 10, color: C.textLight, marginLeft: 4 }}>(−{fmtPrice(totalSavings)})</span>}
                 </div>
               )}
+              {/* Effective incl. CT = bestBase + CT */}
+              {effectiveWithCT > 0 && (
+                <div style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, color: C.accent, marginTop: 2 }}>
+                  {fmtPrice(effectiveWithCT)}{suffix} <span style={{ fontSize: 10, fontWeight: 400, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.06em" }}>effective incl. CT</span>
+                </div>
+              )}
+              {ctMonthly > 0 && (
+                <div style={{ fontFamily: fonts.sans, fontSize: 13, fontWeight: 600, color: C.textMid, marginTop: 2 }}>
+                  {fmtPrice(ctMonthly)}{suffix} <span style={{ fontSize: 10, fontWeight: 400, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    council tax{councilTaxDiscount25 ? " (−25%)" : ""}
+                  </span>
+                </div>
+              )}
             </div>
-            {p.property_type && (
-              <span style={{ border: `1.5px solid ${C.text}`, borderRadius: 20, padding: "4px 12px", fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, color: C.text, textTransform: "capitalize", whiteSpace: "nowrap", marginLeft: 12, flexShrink: 0 }}>
-                {p.property_type}
-              </span>
-            )}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+              {p.property_type && (
+                <span style={{ border: `1.5px solid ${C.text}`, borderRadius: 20, padding: "4px 12px", fontSize: 11, fontFamily: fonts.sans, fontWeight: 600, color: C.text, textTransform: "capitalize", whiteSpace: "nowrap", marginLeft: 12, flexShrink: 0 }}>
+                  {p.property_type}
+                </span>
+              )}
+              {/* Council tax band picker */}
+              <select
+                value={ctBand}
+                onClick={e => e.stopPropagation()}
+                onChange={e => { e.stopPropagation(); handleCtBandChange(e.target.value); }}
+                style={{ border: `1.5px solid ${C.border}`, borderRadius: 20, background: ctBand ? C.accent : "transparent", color: ctBand ? "#fff" : C.textLight, fontSize: 10, fontFamily: fonts.sans, fontWeight: 700, padding: "3px 10px", cursor: "pointer", outline: "none", marginLeft: 12 }}
+              >
+                <option value="">CT Band</option>
+                {Object.keys(BIRMINGHAM_CT_BANDS).map(b => (
+                  <option key={b} value={b}>Band {b}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div style={{ fontFamily: fonts.sans, fontSize: 15, color: C.accent, lineHeight: 1.4, marginTop: 4 }}>
             {p.name}
@@ -2306,7 +2377,7 @@ function isNearestField(field) {
   return field.field_type?.startsWith("nearest");
 }
 
-function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpdated, workplaceAddress, onWorkplaceChange, costPerMile, onCostPerMileChange, mobile, open, onToggle, landmarkCategories, fieldSavings, onFieldSavingsChange }) {
+function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpdated, workplaceAddress, onWorkplaceChange, costPerMile, onCostPerMileChange, mobile, open, onToggle, landmarkCategories, fieldSavings, onFieldSavingsChange, councilTaxDiscount25, onCouncilTaxDiscount25Change }) {
   const [wpEdit, setWpEdit] = useState(workplaceAddress);
   const [wpSaving, setWpSaving] = useState(false);
   const [cpmEdit, setCpmEdit] = useState(costPerMile);
@@ -2390,6 +2461,29 @@ function SettingsPanel({ customFields, onFieldAdded, onFieldDeleted, onFieldUpda
             </div>
             <p style={{ fontSize: 11, fontFamily: fonts.serif, color: C.textLight, fontStyle: "italic", margin: "8px 0 0", lineHeight: 1.5 }}>
               Used to auto-calculate driving cost per round trip when adding properties.
+            </p>
+          </div>
+
+          {/* Council Tax */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={s.sectionHead}>Council Tax (Birmingham 2024/25)</div>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+              <div
+                onClick={() => onCouncilTaxDiscount25Change(!councilTaxDiscount25)}
+                style={{
+                  width: 36, height: 20, borderRadius: 10, position: "relative", cursor: "pointer", flexShrink: 0,
+                  background: councilTaxDiscount25 ? C.accent : C.border, transition: "background 0.2s"
+                }}
+              >
+                <div style={{
+                  position: "absolute", top: 3, left: councilTaxDiscount25 ? 18 : 3, width: 14, height: 14,
+                  borderRadius: "50%", background: "#fff", transition: "left 0.2s"
+                }} />
+              </div>
+              <span style={{ fontFamily: fonts.sans, fontSize: 13, color: C.text }}>Apply 25% single occupancy discount</span>
+            </label>
+            <p style={{ fontSize: 11, fontFamily: fonts.serif, color: C.textLight, fontStyle: "italic", margin: "8px 0 0", lineHeight: 1.5 }}>
+              Select a band (A–H) on each property card. The monthly council tax is shown on the card and added to the total.
             </p>
           </div>
 
@@ -2596,6 +2690,9 @@ export default function GaffTracker() {
   const [landmarkCategories, setLandmarkCategories] = useState(() => getLandmarkCategories(user));
   const [displayCurrency, setDisplayCurrencyState] = useState(getDisplayCurrency);
   const [rates, setRates] = useState(null);
+  const [councilTaxDiscount25, setCouncilTaxDiscount25] = useState(() => {
+    try { return localStorage.getItem("ct_discount_25") === "true"; } catch { return false; }
+  });
 
   // Keep display currency and default tab in sync with App.jsx selector via storage events
   useEffect(() => {
@@ -2658,6 +2755,10 @@ export default function GaffTracker() {
     const { id, created_at, updated_at, user_id, ...fields } = property;
     const { data, error } = await saveProperty({ ...fields, name: `${fields.name} (copy)` });
     if (!error && data) setProperties(ps => [data, ...ps]);
+  };
+
+  const handleUpdate = (id, fields) => {
+    setProperties(ps => ps.map(p => p.id === id ? { ...p, ...fields } : p));
   };
 
   const handleMarkSold = async (property, soldAt) => {
@@ -2794,6 +2895,11 @@ export default function GaffTracker() {
         landmarkCategories={landmarkCategories}
         fieldSavings={fieldSavings}
         onFieldSavingsChange={async (next) => { setFieldSavings(next); await saveFieldSavings(next); }}
+        councilTaxDiscount25={councilTaxDiscount25}
+        onCouncilTaxDiscount25Change={(val) => {
+          setCouncilTaxDiscount25(val);
+          try { localStorage.setItem("ct_discount_25", String(val)); } catch {}
+        }}
         mobile={mobile}
         open={settingsOpen}
         onToggle={() => setSettingsOpen(v => !v)}
@@ -2836,7 +2942,9 @@ export default function GaffTracker() {
               onDelete={handleDelete}
               onDuplicate={handleDuplicate}
               onMarkSold={handleMarkSold}
+              onUpdate={handleUpdate}
               fieldSavings={fieldSavings}
+              councilTaxDiscount25={councilTaxDiscount25}
               mobile={mobile}
               userId={user?.id}
               displayCurrency={displayCurrency}
